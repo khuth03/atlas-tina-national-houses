@@ -1,4 +1,4 @@
-// Atlas by Easy Button Data
+// Atlas by National Houses
 // Design: Dark Intelligence Terminal — Bloomberg meets modern SaaS
 // Colors: Near-black base (#0D0B0A), EBRE orange-red accent (#E8521A), amber data highlights (#F5A623)
 // Typography: Syne (display) + Inter (body) + JetBrains Mono (data)

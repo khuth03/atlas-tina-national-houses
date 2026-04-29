@@ -9,7 +9,7 @@ const MOCK_SIGNALS = [
 ];
 
 const PLATFORM_COLORS: Record<string, { bg: string; color: string; icon: string }> = {
-  "Reddit": { bg: "oklch(0.60 0.20 28 / 0.1)", color: "oklch(0.60 0.20 28)", icon: "🔴" },
+  "Reddit": { bg: "oklch(0.60 0.20 28 / 0.1)", color: "oklch(0.55 0.22 25)", icon: "🔴" },
   "Facebook": { bg: "oklch(0.55 0.18 240 / 0.1)", color: "oklch(0.60 0.18 240)", icon: "🔵" },
   "Craigslist": { bg: "oklch(0.65 0.18 145 / 0.1)", color: "oklch(0.65 0.18 145)", icon: "🟢" },
   "Nextdoor": { bg: "oklch(0.65 0.18 145 / 0.1)", color: "oklch(0.65 0.18 145)", icon: "🏘️" },
@@ -46,7 +46,7 @@ export default function SocialDistress() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
         {[
           { label: "Total Signals", value: "23", color: "oklch(0.95 0.01 60)" },
-          { label: "Reddit", value: "8", color: "oklch(0.60 0.20 28)" },
+          { label: "Reddit", value: "8", color: "oklch(0.55 0.22 25)" },
           { label: "Facebook", value: "6", color: "oklch(0.60 0.18 240)" },
           { label: "Craigslist", value: "5", color: "oklch(0.65 0.18 145)" },
           { label: "Nextdoor", value: "4", color: "oklch(0.65 0.18 300)" },
@@ -66,7 +66,7 @@ export default function SocialDistress() {
             <div style={{ fontSize: 12, color: "oklch(0.45 0.02 40)", marginBottom: 6 }}>Target Keywords</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {["sell fast", "motivated seller", "divorce", "foreclosure", "behind on payments", "can't afford", "must sell", "price reduced", "need to sell", "insurance spike"].map(kw => (
-                <span key={kw} style={{ padding: "4px 8px", background: "oklch(0.60 0.20 28 / 0.1)", border: "1px solid oklch(0.60 0.20 28 / 0.2)", borderRadius: 4, fontSize: 11, color: "oklch(0.60 0.20 28)", fontFamily: "'JetBrains Mono', monospace" }}>{kw}</span>
+                <span key={kw} style={{ padding: "4px 8px", background: "oklch(0.60 0.20 28 / 0.1)", border: "1px solid oklch(0.55 0.22 25 / 0.2)", borderRadius: 4, fontSize: 11, color: "oklch(0.55 0.22 25)", fontFamily: "'JetBrains Mono', monospace" }}>{kw}</span>
               ))}
             </div>
           </div>
@@ -100,8 +100,8 @@ export default function SocialDistress() {
           <button key={p} onClick={() => setActiveFilter(p)} style={{
             padding: "6px 14px", borderRadius: 6, border: "1px solid",
             fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s",
-            background: activeFilter === p ? "oklch(0.60 0.20 28)" : "transparent",
-            borderColor: activeFilter === p ? "oklch(0.60 0.20 28)" : "oklch(0.22 0.015 30)",
+            background: activeFilter === p ? "oklch(0.55 0.22 25)" : "transparent",
+            borderColor: activeFilter === p ? "oklch(0.55 0.22 25)" : "oklch(0.22 0.015 30)",
             color: activeFilter === p ? "white" : "oklch(0.50 0.02 40)",
           }}>{p}</button>
         ))}
@@ -149,7 +149,7 @@ export default function SocialDistress() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                     <span style={{ fontSize: 11, color: "oklch(0.40 0.02 40)" }}>Keywords matched:</span>
                     {sig.keywords.map(kw => (
-                      <span key={kw} style={{ padding: "2px 8px", background: "oklch(0.60 0.20 28 / 0.1)", border: "1px solid oklch(0.60 0.20 28 / 0.2)", borderRadius: 4, fontSize: 11, color: "oklch(0.60 0.20 28)" }}>{kw}</span>
+                      <span key={kw} style={{ padding: "2px 8px", background: "oklch(0.60 0.20 28 / 0.1)", border: "1px solid oklch(0.55 0.22 25 / 0.2)", borderRadius: 4, fontSize: 11, color: "oklch(0.55 0.22 25)" }}>{kw}</span>
                     ))}
                   </div>
 

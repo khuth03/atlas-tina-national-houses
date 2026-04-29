@@ -119,7 +119,7 @@ export default function AppLayout({ children, onLogout }: AppLayoutProps) {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{
                 width: 32, height: 32, borderRadius: 8,
-                background: "oklch(0.60 0.20 28)",
+                background: "oklch(0.55 0.22 25)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 flexShrink: 0,
               }}>
@@ -129,14 +129,14 @@ export default function AppLayout({ children, onLogout }: AppLayoutProps) {
               </div>
               <div>
                 <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: "oklch(0.95 0.01 60)", letterSpacing: "-0.02em" }}>Atlas</div>
-                <div style={{ fontSize: 10, color: "oklch(0.45 0.02 40)", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono', monospace" }}>EASY BUTTON DATA</div>
+                <div style={{ fontSize: 10, color: "oklch(0.45 0.02 40)", letterSpacing: "0.06em", fontFamily: "'JetBrains Mono', monospace" }}>NATIONAL HOUSES</div>
               </div>
             </div>
           )}
           {collapsed && (
             <div style={{
               width: 32, height: 32, borderRadius: 8,
-              background: "oklch(0.60 0.20 28)",
+              background: "oklch(0.55 0.22 25)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -217,12 +217,12 @@ export default function AppLayout({ children, onLogout }: AppLayoutProps) {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: "50%",
-                  background: "oklch(0.60 0.20 28 / 0.2)",
+                  background: "oklch(0.55 0.22 25 / 0.2)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 12, fontWeight: 700, color: "oklch(0.60 0.20 28)",
+                  fontSize: 12, fontWeight: 700, color: "oklch(0.55 0.22 25)",
                 }}>C</div>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "oklch(0.85 0.01 60)" }}>Cole</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "oklch(0.85 0.01 60)" }}>Tina</div>
                   <div style={{ fontSize: 10, color: "oklch(0.40 0.02 40)" }}>Admin</div>
                 </div>
               </div>

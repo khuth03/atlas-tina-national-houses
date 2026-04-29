@@ -16,7 +16,7 @@ export default function Login({ onLogin }: LoginProps) {
     setLoading(true);
     setError("");
     setTimeout(() => {
-      if (email === "cole@easybuttonrealestate.com" && password === "Malakai1074$") {
+      if (email === "tina@nationalhouses.com" && password === "Tina1074$") {
         onLogin();
       } else {
         setError("Invalid credentials. Please try again.");
@@ -56,7 +56,7 @@ export default function Login({ onLogin }: LoginProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 48 }}>
           <div style={{
             width: 40, height: 40, borderRadius: 10,
-            background: "oklch(0.60 0.20 28)",
+            background: "oklch(0.55 0.22 25)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
@@ -69,7 +69,7 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
         </div>
 
-        <div style={{ fontSize: 11, color: "oklch(0.60 0.20 28)", letterSpacing: "0.12em", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "oklch(0.55 0.22 25)", letterSpacing: "0.12em", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", marginBottom: 16 }}>
           Meet Atlas
         </div>
         <h1 style={{
@@ -81,12 +81,12 @@ export default function Login({ onLogin }: LoginProps) {
           color: "oklch(0.95 0.01 60)",
           marginBottom: 20,
         }}>
-          Your <span style={{ color: "oklch(0.60 0.20 28)", fontStyle: "italic" }}>full-time</span><br/>
+          Your <span style={{ color: "oklch(0.55 0.22 25)", fontStyle: "italic" }}>full-time</span><br/>
           data team,<br/>
           built into one app.
         </h1>
         <p style={{ fontSize: 15, color: "oklch(0.50 0.02 40)", lineHeight: 1.6, maxWidth: 380 }}>
-          Atlas by Easy Button Data connects to dozens of property databases, satellites, and softwares to bring you{" "}
+          Atlas by National Houses connects to dozens of property databases, satellites, and softwares to bring you{" "}
           <strong style={{ color: "oklch(0.70 0.01 60)", fontWeight: 600 }}>sellers ready to sell in your buy box, today.</strong>
         </p>
 
@@ -116,7 +116,7 @@ export default function Login({ onLogin }: LoginProps) {
         {/* Atlas icon */}
         <div style={{
           width: 52, height: 52, borderRadius: 14,
-          background: "oklch(0.60 0.20 28)",
+          background: "oklch(0.55 0.22 25)",
           display: "flex", alignItems: "center", justifyContent: "center",
           marginBottom: 24,
           boxShadow: "0 8px 32px oklch(0.60 0.20 28 / 0.3)",
@@ -130,8 +130,8 @@ export default function Login({ onLogin }: LoginProps) {
           Welcome back.
         </h2>
         <p style={{ fontSize: 14, color: "oklch(0.45 0.02 40)", marginBottom: 32 }}>
-          I'm Atlas — <span style={{ color: "oklch(0.60 0.20 28)", fontWeight: 600 }}>your full-time data agent.</span><br/>
-          Ready to build you the most marketable dataset possible.
+          I'm Atlas — <span style={{ color: "oklch(0.55 0.22 25)", fontWeight: 600 }}>your full-time data agent.</span><br/>
+          We Buy Houses As-Is Across the U.S.
         </p>
 
         {error && (
@@ -178,7 +178,7 @@ export default function Login({ onLogin }: LoginProps) {
         </form>
 
         <div style={{ marginTop: 32, fontSize: 11, color: "oklch(0.35 0.02 40)", textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }}>
-          Atlas by Easy Button Data · Private Access Only · Commercial Real Estate Intelligence
+          Atlas by National Houses · Private Access Only · Multi-State Real Estate Intelligence
         </div>
       </div>
     </div>

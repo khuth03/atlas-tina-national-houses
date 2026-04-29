@@ -36,7 +36,7 @@ export default function ObituaryMonitor() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
         {[
           { label: "Obituaries Scanned Today", value: "47", color: "oklch(0.95 0.01 60)" },
-          { label: "Property Matches", value: "12", color: "oklch(0.60 0.20 28)" },
+          { label: "Property Matches", value: "12", color: "oklch(0.55 0.22 25)" },
           { label: "Probate Filed", value: "5", color: "oklch(0.75 0.18 65)" },
           { label: "Skip Traced", value: "9", color: "oklch(0.65 0.18 145)" },
         ].map(s => (
@@ -61,7 +61,7 @@ export default function ObituaryMonitor() {
             <div key={s.step} style={{ display: "flex", alignItems: "center", flex: 1 }}>
               <div style={{ flex: 1, textAlign: "center" }}>
                 <div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "oklch(0.60 0.20 28)", marginBottom: 4 }}>STEP {s.step}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "oklch(0.55 0.22 25)", marginBottom: 4 }}>STEP {s.step}</div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "oklch(0.85 0.01 60)", marginBottom: 2 }}>{s.label}</div>
                 <div style={{ fontSize: 11, color: "oklch(0.40 0.02 40)" }}>{s.desc}</div>
               </div>

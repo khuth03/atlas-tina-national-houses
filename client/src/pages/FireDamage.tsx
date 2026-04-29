@@ -10,7 +10,7 @@ const MOCK_INCIDENTS = [
 
 const SEVERITY_STYLE: Record<string, { color: string; bg: string }> = {
   "Total Loss": { color: "oklch(0.55 0.22 25)", bg: "oklch(0.55 0.22 25 / 0.1)" },
-  "Major": { color: "oklch(0.60 0.20 28)", bg: "oklch(0.60 0.20 28 / 0.1)" },
+  "Major": { color: "oklch(0.55 0.22 25)", bg: "oklch(0.60 0.20 28 / 0.1)" },
   "Moderate": { color: "oklch(0.75 0.18 65)", bg: "oklch(0.75 0.18 65 / 0.1)" },
   "Minor": { color: "oklch(0.65 0.18 145)", bg: "oklch(0.65 0.18 145 / 0.1)" },
 };
@@ -57,7 +57,7 @@ export default function FireDamage() {
         {[
           { label: "Incidents This Week", value: "11", color: "oklch(0.95 0.01 60)" },
           { label: "Total Loss", value: "2", color: "oklch(0.55 0.22 25)" },
-          { label: "Major Fires", value: "4", color: "oklch(0.60 0.20 28)" },
+          { label: "Major Fires", value: "4", color: "oklch(0.55 0.22 25)" },
           { label: "Skip Traced", value: "8", color: "oklch(0.65 0.18 145)" },
           { label: "Offers Made", value: "1", color: "oklch(0.75 0.18 65)" },
         ].map(s => (
@@ -103,8 +103,8 @@ export default function FireDamage() {
           <button key={s} onClick={() => setFilter(s)} style={{
             padding: "6px 14px", borderRadius: 6, border: "1px solid",
             fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s",
-            background: filter === s ? "oklch(0.60 0.20 28)" : "transparent",
-            borderColor: filter === s ? "oklch(0.60 0.20 28)" : "oklch(0.22 0.015 30)",
+            background: filter === s ? "oklch(0.55 0.22 25)" : "transparent",
+            borderColor: filter === s ? "oklch(0.55 0.22 25)" : "oklch(0.22 0.015 30)",
             color: filter === s ? "white" : "oklch(0.50 0.02 40)",
           }}>{s}</button>
         ))}

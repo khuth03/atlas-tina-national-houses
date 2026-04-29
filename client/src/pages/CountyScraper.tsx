@@ -67,7 +67,7 @@ export default function CountyScraper() {
           { label: "Foreclosures", value: "18", color: "oklch(0.60 0.22 25)" },
           { label: "Tax Delinquent", value: "12", color: "oklch(0.75 0.18 65)" },
           { label: "Probate/Divorce", value: "9", color: "oklch(0.60 0.18 240)" },
-          { label: "High Score (85+)", value: "11", color: "oklch(0.60 0.20 28)" },
+          { label: "High Score (85+)", value: "11", color: "oklch(0.55 0.22 25)" },
         ].map(s => (
           <div key={s.label} className="atlas-stat-card" style={{ padding: 16 }}>
             <div className="atlas-label" style={{ marginBottom: 6 }}>{s.label}</div>
@@ -83,9 +83,9 @@ export default function CountyScraper() {
           <div>
             <div style={{ fontSize: 12, color: "oklch(0.45 0.02 40)", marginBottom: 6 }}>Target Counties</div>
             <select className="atlas-input" style={{ fontSize: 13 }}>
-              <option>Horry County, SC</option>
-              <option>Georgetown County, SC</option>
-              <option>Marion County, SC</option>
+              <option>Jackson County, MO</option>
+              <option>Clay County, MO</option>
+              <option>Platte County, MO</option>
             </select>
           </div>
           <div>
@@ -129,8 +129,8 @@ export default function CountyScraper() {
               fontWeight: 500,
               cursor: "pointer",
               transition: "all 0.15s",
-              background: filter === t ? "oklch(0.60 0.20 28)" : "transparent",
-              borderColor: filter === t ? "oklch(0.60 0.20 28)" : "oklch(0.22 0.015 30)",
+              background: filter === t ? "oklch(0.55 0.22 25)" : "transparent",
+              borderColor: filter === t ? "oklch(0.55 0.22 25)" : "oklch(0.22 0.015 30)",
               color: filter === t ? "white" : "oklch(0.50 0.02 40)",
             }}
           >{t}</button>

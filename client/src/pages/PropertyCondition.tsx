@@ -12,7 +12,7 @@ const MOCK_RESULTS = [
 const SCORE_LABEL: Record<number, { label: string; color: string }> = {
   1: { label: "Critical", color: "oklch(0.50 0.25 25)" },
   2: { label: "Severe", color: "oklch(0.55 0.22 25)" },
-  3: { label: "Heavy", color: "oklch(0.60 0.20 28)" },
+  3: { label: "Heavy", color: "oklch(0.55 0.22 25)" },
   4: { label: "Moderate-High", color: "oklch(0.65 0.18 40)" },
   5: { label: "Moderate", color: "oklch(0.70 0.18 55)" },
   6: { label: "Light", color: "oklch(0.75 0.18 65)" },
@@ -91,7 +91,7 @@ export default function PropertyCondition() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{
                   fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700,
-                  color: "oklch(0.60 0.20 28)", background: "oklch(0.60 0.20 28 / 0.1)",
+                  color: "oklch(0.55 0.22 25)", background: "oklch(0.60 0.20 28 / 0.1)",
                   padding: "3px 8px", borderRadius: 4,
                 }}>{s.step}</div>
                 <div style={{ fontSize: 18 }}>{s.icon}</div>

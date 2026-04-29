@@ -11,7 +11,7 @@ const MOCK_RESULTS = [
 
 const FEMA_COLOR: Record<string, string> = {
   "VE": "oklch(0.55 0.22 25)",
-  "AE": "oklch(0.60 0.20 28)",
+  "AE": "oklch(0.55 0.22 25)",
   "X": "oklch(0.75 0.18 65)",
 };
 

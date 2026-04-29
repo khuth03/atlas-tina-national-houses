@@ -122,7 +122,7 @@ const MODULES = [
 
 const TOP_STATS = [
   { label: "Total Leads Today", value: "147", delta: "+23 vs yesterday", color: "oklch(0.65 0.18 145)" },
-  { label: "Active Modules", value: "6/6", delta: "All systems live", color: "oklch(0.60 0.20 28)" },
+  { label: "Active Modules", value: "6/6", delta: "All systems live", color: "oklch(0.55 0.22 25)" },
   { label: "Properties Scored", value: "12,847", delta: "This month", color: "oklch(0.75 0.18 65)" },
   { label: "Avg Distress Score", value: "6.8", delta: "Out of 10", color: "oklch(0.60 0.22 25)" },
 ];
