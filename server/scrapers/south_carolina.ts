@@ -24,7 +24,7 @@ async function scrapeHorryPreForeclosure(fromDate: string, toDate: string): Prom
   try {
     // Horry County Clerk of Court - Lis Pendens / Foreclosure filings
     // SC uses JCMS (Judicial Case Management System) - public access
-    const url = `https://www.horrycounty.org/Departments/Clerk-of-Court`;
+    const url = `https://www.horrycountysc.gov/Departments/Clerk-of-Court`;
     const res = await fetchWithRetry(url);
     if (!res.ok) return leads;
 
@@ -36,7 +36,7 @@ async function scrapeHorryPreForeclosure(fromDate: string, toDate: string): Prom
       const href = $(el).attr("href") || "";
       const text = $(el).text().trim().toLowerCase();
       if (text.includes("foreclosure") || text.includes("lis pendens") || text.includes("civil")) {
-        const fullUrl = href.startsWith("http") ? href : `https://www.horrycounty.org${href}`;
+        const fullUrl = href.startsWith("http") ? href : `https://www.horrycountysc.gov${href}`;
         leads.push({
           id: makeId(COUNTY, STATE, "Pre-Foreclosure", fullUrl),
           county: COUNTY,
@@ -143,7 +143,7 @@ async function scrapeHorryTaxDelinquent(fromDate: string, toDate: string): Promi
   const COUNTY = "Horry";
   try {
     // Horry County Treasurer - delinquent tax list
-    const url = `https://www.horrycounty.org/Departments/Treasurer/Delinquent-Tax`;
+    const url = `https://www.horrycountysc.gov/Departments/Treasurer/Delinquent-Tax`;
     const res = await fetchWithRetry(url);
     if (!res.ok) return leads;
 
@@ -178,7 +178,7 @@ async function scrapeHorryTaxDelinquent(fromDate: string, toDate: string): Promi
         sale_date: null,
         sale_amount: null,
         description: `Horry County Tax Delinquent — ${text}`,
-        source_url: href.startsWith("http") ? href : `https://www.horrycounty.org${href}`,
+        source_url: href.startsWith("http") ? href : `https://www.horrycountysc.gov${href}`,
         raw_data: JSON.stringify({ text, href }),
       });
     });
@@ -231,7 +231,7 @@ async function scrapeHorryProbate(fromDate: string, toDate: string): Promise<Lea
   const COUNTY = "Horry";
   try {
     // Horry County Probate Court
-    const url = `https://www.horrycounty.org/Departments/Probate-Court`;
+    const url = `https://www.horrycountysc.gov/Departments/Probate-Court`;
     const res = await fetchWithRetry(url);
     if (!res.ok) return leads;
 
@@ -314,7 +314,7 @@ async function scrapeHorrySheriffSales(fromDate: string, toDate: string): Promis
   const leads: Lead[] = [];
   const COUNTY = "Horry";
   try {
-    const url = `https://www.horrycounty.org/Departments/Sheriff/Civil-Division`;
+    const url = `https://www.horrycountysc.gov/Departments/Sheriff/Civil-Division`;
     const res = await fetchWithRetry(url);
     if (!res.ok) return leads;
 

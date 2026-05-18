@@ -1,12 +1,15 @@
 [phases.setup]
-nixPkgs = ["nodejs_20"]
+nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
 
 [phases.install]
-cmds = ["npm install -g pnpm && pnpm install --frozen-lockfile"]
+cmds = [
+  "npm install -g pnpm@9 --prefix /usr/local",
+  "export PATH=/usr/local/bin:$PATH && pnpm install --no-frozen-lockfile",
+  "export PATH=/usr/local/bin:$PATH && pnpm rebuild better-sqlite3"
+]
 
 [phases.build]
-cmds = ["pnpm run build"]
+cmds = ["export PATH=/usr/local/bin:$PATH && pnpm run build"]
 
 [start]
 cmd = "node dist/index.js"
-
