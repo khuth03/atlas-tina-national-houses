@@ -39,6 +39,11 @@ export function formatDate(d: string | null | undefined): string | null {
 }
 
 export async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 3): Promise<Response> {
+  const SCRAPER_KEY = process.env.SCRAPER_API_KEY;
+  // Route through ScraperAPI if key is set (bypasses government site IP blocks)
+  const fetchUrl = SCRAPER_KEY
+    ? `https://api.scraperapi.com?api_key=${SCRAPER_KEY}&url=${encodeURIComponent(url)}&render=false`
+    : url;
   const headers = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -47,7 +52,7 @@ export async function fetchWithRetry(url: string, options: RequestInit = {}, ret
   };
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await fetch(url, { ...options, headers });
+      const res = await fetch(fetchUrl, { ...options, headers });
       if (res.ok || res.status === 404) return res;
       if (res.status === 429 || res.status >= 500) {
         await new Promise(r => setTimeout(r, 2000 * (i + 1)));
