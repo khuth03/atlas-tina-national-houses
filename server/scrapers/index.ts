@@ -83,24 +83,24 @@ export async function runAllScrapers(
     // States with county-by-county scrapers (AL, OH, SC)
     for (const county of stateCounties) {
       try {
-        onProgress?.(`Scraping ${county.name}, ${county.state} (all 11 lead types)...`);
+        onProgress?.(`Scraping ${(county.name || (county as any).county || "")}, ${county.state} (all 11 lead types)...`);
         let leads: Lead[] = [];
         if (state === "AL") {
-          leads = await alabama.scrapeAlabama(county.name, fromDate, toDate);
+          leads = await alabama.scrapeAlabama((county.name || (county as any).county || ""), fromDate, toDate);
         } else if (state === "OH") {
-          leads = await ohio.scrapeOhio(county.name, fromDate, toDate);
+          leads = await ohio.scrapeOhio((county.name || (county as any).county || ""), fromDate, toDate);
         } else if (state === "SC") {
-          leads = await southCarolina.scrapeSC(county.name, fromDate, toDate);
+          leads = await southCarolina.scrapeSC((county.name || (county as any).county || ""), fromDate, toDate);
         } else {
-          const msg = `No scraper registered for ${county.name}, ${county.state}`;
+          const msg = `No scraper registered for ${(county.name || (county as any).county || "")}, ${county.state}`;
           errors.push(msg);
           onProgress?.(`✗ ${msg}`);
           continue;
         }
         allLeads.push(...leads);
-        onProgress?.(`✓ ${county.name} ${county.state}: ${leads.length} leads`);
+        onProgress?.(`✓ ${(county.name || (county as any).county || "")} ${county.state}: ${leads.length} leads`);
       } catch (e) {
-        const msg = `Error scraping ${county.name} ${county.state}: ${(e as Error).message}`;
+        const msg = `Error scraping ${(county.name || (county as any).county || "")} ${county.state}: ${(e as Error).message}`;
         errors.push(msg);
         onProgress?.(`✗ ${msg}`);
       }
