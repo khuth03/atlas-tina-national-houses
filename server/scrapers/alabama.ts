@@ -306,7 +306,9 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
       const desc  = (item.match(/<description><!\[CDATA\[(.+?)\]\]><\/description>/) || item.match(/<description>(.+?)<\/description>/))?.[1]?.trim() || "";
       const pubDate = (item.match(/<pubDate>(.+?)<\/pubDate>/))?.[1]?.trim() || "";
       const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
-      const caseName = desc.replace(/<[^>]+>/g, "").trim();
+      // Extract owner name from title: "26-70730-13 Jesse Ray Evin Keeton" -> "Jesse Ray Evin Keeton"
+      const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
+      const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
       leads.push({
         id: makeId("AL", "AL", "Bankruptcy", caseNum),
         county: "AL",
