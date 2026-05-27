@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const CLIENT_CONFIG = {
   name: process.env.CLIENT_NAME || "Atlas",
   email: process.env.CLIENT_EMAIL || "",
-  counties: (JSON.parse(process.env.CLIENT_COUNTIES || "[]") as Array<Record<string, string>>).map(c => ({ name: c.name || c.county || "", state: c.state || "" })),
+  counties: (JSON.parse(process.env.CLIENT_COUNTIES || "[]") as Array<Record<string, string>>).map(c => ({ name: c.name || c.county || "", county: c.name || c.county || "", state: c.state || "" })),
 };
 
 // ─── CSV EXPORT ───────────────────────────────────────────────────────────────
