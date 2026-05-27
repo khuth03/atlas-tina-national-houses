@@ -243,8 +243,3 @@ async function startServer() {
 startServer().catch(console.error);
 // force rebuild Wed May 27 18:33:04 EDT 2026
 
-// DEBUG endpoint - remove after testing
-app.get("/api/debug/counties", (_req, res) => {
-  const counties = CLIENT_CONFIG.counties;
-  res.json({ counties, raw: process.env.CLIENT_COUNTIES });
-});
