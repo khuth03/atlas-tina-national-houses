@@ -576,7 +576,7 @@ export async function scrapeOutOfStateOwners(fromDate: string, toDate: string): 
         const caseNum = String(r.docket_number || "");
         const filedDate = String(r.date_filed || "");
         if (!caseName && !caseNum) continue;
-        leads.push({ id: makeId("OOS", caseNum || caseName, "WI", "oos"), county: "WI", state: "WI", lead_type: "Out-of-State Owner", owner_name: caseName || null, address: null, city: null, zip: null, mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null, case_number: caseNum || null, filing_date: formatDate(filedDate), assessed_value: null, tax_year: null, lender: null, loan_amount: null, sale_date: null, sale_amount: null, description: `Out-of-State Owner — ${caseName || caseNum}`, source_url: r.absolute_url ? `https://www.courtlistener.com${r.absolute_url}` : "https://www.courtlistener.com/", raw_data: JSON.stringify({ caseName, caseNum, filedDate }) });
+        leads.push({ id: makeId("OOS", caseNum || caseName, "WI", "oos"), county: "WI", state: "WI", lead_type: "Vacant/Abandoned", owner_name: caseName || null, address: null, city: null, zip: null, mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null, case_number: caseNum || null, filing_date: formatDate(filedDate), assessed_value: null, tax_year: null, lender: null, loan_amount: null, sale_date: null, sale_amount: null, description: `Out-of-State Owner — ${caseName || caseNum}`, source_url: r.absolute_url ? `https://www.courtlistener.com${r.absolute_url}` : "https://www.courtlistener.com/", raw_data: JSON.stringify({ caseName, caseNum, filedDate }) });
       }
     }
   } catch (e) { console.error("[WI] Out-of-State Owners error:", e); }
