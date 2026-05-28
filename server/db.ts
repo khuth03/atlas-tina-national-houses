@@ -52,12 +52,6 @@ db.exec(`
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  -- Add skip trace columns to existing databases (idempotent)
-  ALTER TABLE leads ADD COLUMN IF NOT EXISTS skip_traced INTEGER NOT NULL DEFAULT 0;
-  ALTER TABLE leads ADD COLUMN IF NOT EXISTS st_phone TEXT;
-  ALTER TABLE leads ADD COLUMN IF NOT EXISTS st_email TEXT;
-  ALTER TABLE leads ADD COLUMN IF NOT EXISTS st_mailing TEXT;
-
   CREATE INDEX IF NOT EXISTS idx_leads_county ON leads(county);
   CREATE INDEX IF NOT EXISTS idx_leads_lead_type ON leads(lead_type);
   CREATE INDEX IF NOT EXISTS idx_leads_filing_date ON leads(filing_date);
@@ -80,6 +74,17 @@ db.exec(`
     value TEXT NOT NULL
   );
 `);
+
+// ─── MIGRATIONS (safe for SQLite < 3.35) ─────────────────────────────────────
+const migrations = [
+  "ALTER TABLE leads ADD COLUMN skip_traced INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE leads ADD COLUMN st_phone TEXT",
+  "ALTER TABLE leads ADD COLUMN st_email TEXT",
+  "ALTER TABLE leads ADD COLUMN st_mailing TEXT",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (_) { /* column already exists — safe to ignore */ }
+}
 
 // ─── LEAD TYPE NORMALIZATION ──────────────────────────────────────────────────
 const LEAD_TYPE_MAP: Record<string, string> = {
