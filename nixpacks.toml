@@ -1,17 +1,16 @@
 [phases.setup]
 nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
-
 [phases.install]
 cmds = [
   "npm install -g pnpm@9 --prefix /usr/local",
   "export PATH=/usr/local/bin:$PATH && pnpm install --no-frozen-lockfile",
   "export PATH=/usr/local/bin:$PATH && pnpm rebuild better-sqlite3"
 ]
-
 [phases.build]
-cmds = ["export PATH=/usr/local/bin:$PATH && pnpm run build"]
-
+cmds = [
+  "rm -rf /app/node_modules/.cache /app/dist",
+  "export PATH=/usr/local/bin:$PATH && pnpm run build"
+]
 [start]
 cmd = "node dist/index.js"
-
-# cache-bust: 1779922063
+# cache-bust: force-clean-build-2
