@@ -3,13 +3,13 @@ nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
 [phases.install]
 cmds = [
   "npm install -g pnpm@9 --prefix /usr/local",
-  "export PATH=/usr/local/bin:$PATH && pnpm install --no-frozen-lockfile --ignore-scripts",
+  "export PATH=/usr/local/bin:$PATH && pnpm install --no-frozen-lockfile --prod=false",
   "export PATH=/usr/local/bin:$PATH && pnpm rebuild better-sqlite3"
 ]
 [phases.build]
 cmds = [
-  "export PATH=/usr/local/bin:$PATH && ./node_modules/.bin/vite build && ./node_modules/.bin/esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist"
+  "export PATH=/usr/local/bin:$PATH && pnpm run build"
 ]
 [start]
 cmd = "node dist/index.js"
-# cache-bust: v7-direct-bin
+# cache-bust: v8-prod-false
