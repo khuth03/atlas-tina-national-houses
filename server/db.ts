@@ -71,6 +71,15 @@ db.exec(`
 export function upsertLead(lead: Record<string, string | null>) {
   const existing = db.prepare("SELECT id FROM leads WHERE id = ?").get(lead.id);
   if (existing) return false; // already have it, skip
+  // Sanitize: ensure all named params exist (SQLite throws RangeError if missing)
+  const fields = [
+    'id','county','state','lead_type','owner_name','address','city','zip',
+    'mailing_address','mailing_city','mailing_state','mailing_zip',
+    'case_number','filing_date','assessed_value','tax_year','lender',
+    'loan_amount','sale_date','sale_amount','description','source_url','raw_data'
+  ];
+  const safeLead: Record<string, string | null> = {};
+  for (const f of fields) safeLead[f] = (lead[f] !== undefined ? lead[f] : null);
   db.prepare(`
     INSERT INTO leads (
       id, county, state, lead_type, owner_name, address, city, zip,
@@ -83,7 +92,7 @@ export function upsertLead(lead: Record<string, string | null>) {
       @case_number, @filing_date, @assessed_value, @tax_year, @lender,
       @loan_amount, @sale_date, @sale_amount, @description, @source_url, @raw_data
     )
-  `).run(lead);
+  `).run(safeLead);
   return true;
 }
 
