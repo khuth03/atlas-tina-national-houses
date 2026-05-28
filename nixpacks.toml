@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
+nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
 [phases.install]
 cmds = [
   "npm install -g pnpm@9 --prefix /usr/local",
@@ -12,4 +12,4 @@ cmds = [
 ]
 [start]
 cmd = "node dist/index.js"
-# cache-bust: v8-prod-false
+# cache-bust: v9-node20
