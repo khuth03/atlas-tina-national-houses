@@ -8,8 +8,8 @@ cmds = [
 ]
 [phases.build]
 cmds = [
-  "export PATH=/usr/local/bin:$PATH && rm -rf /app/dist && pnpm run build"
+  "export PATH=/usr/local/bin:$PATH && pnpm run build"
 ]
 [start]
 cmd = "node dist/index.js"
-# cache-bust: force-clean-dist-4
+# cache-bust: v5-no-rm-dist
