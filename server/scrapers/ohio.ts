@@ -206,6 +206,9 @@ async function scrapeProbate(fromDate: string, toDate: string): Promise<Lead[]> 
     const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
     const rows = html.match(rowRe) || [];
 
+    // Collect all rows first
+    type OHProbateRow = { ownerName: string; caseNum: string; cells: string[] };
+    const ohCases: OHProbateRow[] = [];
     for (const row of rows) {
       const cells: string[] = [];
       let m;
@@ -214,31 +217,37 @@ async function scrapeProbate(fromDate: string, toDate: string): Promise<Lead[]> 
       }
       cellRe.lastIndex = 0;
       if (cells.length < 2 || !cells[1]) continue;
-
-      const ownerName = cells[1];
-      const caseNum = cells[0];
-
-      // Cross-reference against Hamilton County assessor — only save if property found
-      const properties = await lookupOwnerProperties(ownerName, "Hamilton", "OH");
-      if (properties.length === 0) continue;
-
-      for (const prop of properties) {
-        leads.push({
-          id: makeId(`${caseNum}-${prop.address}`, "Hamilton", "OH", "probate"),
-          county: "Hamilton", state: "OH",
-          lead_type: "Probate/Estate",
-          owner_name: ownerName,
-          address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
-          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: caseNum || null,
-          filing_date: formatDate(cells[2]),
-          assessed_value: null, tax_year: null,
-          lender: null, loan_amount: null,
-          sale_date: null, sale_amount: null,
-          description: "Probate estate filing — potential property sale",
-          source_url: url,
-          raw_data: JSON.stringify({ cells, parcelId: prop.parcelId }),
-        });
+      ohCases.push({ ownerName: cells[1], caseNum: cells[0], cells });
+    }
+    // Parallel assessor lookups — 5 concurrent
+    const CONCURRENCY = 5;
+    for (let i = 0; i < ohCases.length; i += CONCURRENCY) {
+      const batch = ohCases.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(c => lookupOwnerProperties(c.ownerName, "Hamilton", "OH"))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const { ownerName, caseNum, cells } = batch[j];
+        const properties = results[j];
+        if (properties.length === 0) continue;
+        for (const prop of properties) {
+          leads.push({
+            id: makeId(`${caseNum}-${prop.address}`, "Hamilton", "OH", "probate"),
+            county: "Hamilton", state: "OH",
+            lead_type: "Probate/Estate",
+            owner_name: ownerName,
+            address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
+            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+            case_number: caseNum || null,
+            filing_date: formatDate(cells[2]),
+            assessed_value: null, tax_year: null,
+            lender: null, loan_amount: null,
+            sale_date: null, sale_amount: null,
+            description: "Probate estate filing — potential property sale",
+            source_url: url,
+            raw_data: JSON.stringify({ cells, parcelId: prop.parcelId }),
+          });
+        }
       }
     }
   } catch (e) {
@@ -384,6 +393,9 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
       if (!rss.ok) continue;
       const xml = await rss.text();
       const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+      // Parse all items first
+      type OHBkItem = { title: string; link: string; pubDate: string; caseNum: string; caseName: string };
+      const bkItems: OHBkItem[] = [];
       for (const item of items) {
         const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
         const link  = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
@@ -392,28 +404,37 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
         const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
         const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
         const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
-
-        // Cross-reference against Hamilton County assessor — only save if property found
-        const properties = await lookupOwnerProperties(caseName, "Hamilton", "OH");
-        if (properties.length === 0) continue;
-
-        for (const prop of properties) {
-          leads.push({
-            id: makeId("OH", feedUrl.includes("ohsb") ? "S" : "N", "Bankruptcy", `${caseNum}-${prop.address}`),
-            county: "Hamilton",
-            state: "OH",
-            lead_type: "Bankruptcy",
-            owner_name: caseName || caseNum,
-            address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
-            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-            case_number: caseNum,
-            filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
-            assessed_value: null, tax_year: null,
-            lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-            source_url: link || feedUrl,
-            description: `OH Bankruptcy — ${caseName || caseNum}`,
-            raw_data: JSON.stringify({ title, caseNum, caseName, pubDate, parcelId: prop.parcelId }),
-          });
+        bkItems.push({ title, link, pubDate, caseNum, caseName });
+      }
+      // Parallel assessor lookups — 5 concurrent
+      const CONCURRENCY = 5;
+      for (let i = 0; i < bkItems.length; i += CONCURRENCY) {
+        const batch = bkItems.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          batch.map(b => lookupOwnerProperties(b.caseName, "Hamilton", "OH"))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const { title, link, pubDate, caseNum, caseName } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId("OH", feedUrl.includes("ohsb") ? "S" : "N", "Bankruptcy", `${caseNum}-${prop.address}`),
+              county: "Hamilton",
+              state: "OH",
+              lead_type: "Bankruptcy",
+              owner_name: caseName || caseNum,
+              address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              source_url: link || feedUrl,
+              description: `OH Bankruptcy — ${caseName || caseNum}`,
+              raw_data: JSON.stringify({ title, caseNum, caseName, pubDate, parcelId: prop.parcelId }),
+            });
+          }
         }
       }
     } catch (e) {

@@ -270,6 +270,9 @@ export async function scrapeProbate(county: string, fromDate: string, toDate: st
     if (!res.ok) return leads;
     const html = await res.text();
     const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+    // Collect all cases first
+    type ALProbateRow = { caseNum: string; name: string; filed: string };
+    const cases: ALProbateRow[] = [];
     for (const row of rows) {
       const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
       if (cells.length < 3) continue;
@@ -278,23 +281,32 @@ export async function scrapeProbate(county: string, fromDate: string, toDate: st
       const name = getCell(cells[1] || "");
       const filed = getCell(cells[2] || "");
       if (!caseNum && !name) continue;
-
-      // Cross-reference against county assessor — only save if property found
-      const properties = await lookupOwnerProperties(name, county, "AL");
-      if (properties.length === 0) continue;
-
-      for (const prop of properties) {
-        leads.push({
-          id: makeId("PROB", `${caseNum || name}-${prop.address}`, county, "AL"),
-          county, state: "AL", lead_type: "Probate",
-          owner_name: name || null, address: prop.address, city: prop.city || county, zip: prop.zip || null,
-          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: caseNum || null, filing_date: formatDate(filed),
-          assessed_value: null, tax_year: null, lender: null, loan_amount: null,
-          sale_date: null, sale_amount: null,
-          description: `${county} County AL Probate — ${name || caseNum}`,
-          source_url: url, raw_data: JSON.stringify({ caseNum, name, filed, parcelId: prop.parcelId }),
-        });
+      cases.push({ caseNum, name, filed });
+    }
+    // Parallel assessor lookups — 5 concurrent
+    const CONCURRENCY = 5;
+    for (let i = 0; i < cases.length; i += CONCURRENCY) {
+      const batch = cases.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(c => lookupOwnerProperties(c.name, county, "AL"))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const { caseNum, name, filed } = batch[j];
+        const properties = results[j];
+        if (properties.length === 0) continue;
+        for (const prop of properties) {
+          leads.push({
+            id: makeId("PROB", `${caseNum || name}-${prop.address}`, county, "AL"),
+            county, state: "AL", lead_type: "Probate",
+            owner_name: name || null, address: prop.address, city: prop.city || county, zip: prop.zip || null,
+            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+            case_number: caseNum || null, filing_date: formatDate(filed),
+            assessed_value: null, tax_year: null, lender: null, loan_amount: null,
+            sale_date: null, sale_amount: null,
+            description: `${county} County AL Probate — ${name || caseNum}`,
+            source_url: url, raw_data: JSON.stringify({ caseNum, name, filed, parcelId: prop.parcelId }),
+          });
+        }
       }
     }
   } catch (e) { console.error(`[AL] Probate ${county} error:`, e); }
@@ -314,6 +326,9 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
       if (!rss.ok) continue;
       const xml = await rss.text();
       const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+      // Parse all items first
+      type ALBkItem = { title: string; link: string; pubDate: string; caseNum: string; caseName: string };
+      const bkItems: ALBkItem[] = [];
       for (const item of items) {
         const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
         const link  = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
@@ -322,17 +337,31 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
         const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
         const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
         const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
-
-        // Try each county in this district until we find a property match
-        let found = false;
-        for (const county of feed.counties) {
-          const properties = await lookupOwnerProperties(caseName, county, "AL");
-          if (properties.length === 0) continue;
-          found = true;
-          for (const prop of properties) {
+        bkItems.push({ title, link, pubDate, caseNum, caseName });
+      }
+      // Parallel assessor lookups across counties — 5 concurrent
+      const CONCURRENCY = 5;
+      for (let i = 0; i < bkItems.length; i += CONCURRENCY) {
+        const batch = bkItems.slice(i, i + CONCURRENCY);
+        // For each item, try all counties in parallel and pick first match
+        const batchResults = await Promise.all(
+          batch.map(async b => {
+            for (const county of feed.counties) {
+              const props = await lookupOwnerProperties(b.caseName, county, "AL");
+              if (props.length > 0) return { county, props };
+            }
+            return null;
+          })
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const match = batchResults[j];
+          if (!match) continue;
+          const { title, link, pubDate, caseNum, caseName } = batch[j];
+          const { county, props } = match;
+          for (const prop of props) {
             leads.push({
               id: makeId("AL", "AL", "Bankruptcy", `${caseNum}-${prop.address}`),
-              county: prop.city ? county : county,
+              county,
               state: "AL",
               lead_type: "Bankruptcy",
               owner_name: caseName || caseNum,
@@ -349,7 +378,6 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
               raw_data: JSON.stringify({ title, caseNum, caseName, pubDate, parcelId: prop.parcelId }),
             });
           }
-          if (found) break; // stop at first county with a match
         }
       }
     }
