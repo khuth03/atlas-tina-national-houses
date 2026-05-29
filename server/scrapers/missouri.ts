@@ -18,6 +18,7 @@
 
 import * as cheerio from "cheerio";
 import { Lead, makeId, formatDate, fetchWithRetry, CountyConfig } from "./base.js";
+import { lookupOwnerProperties } from "./assessor.js";
 
 const STATE = "MO";
 
@@ -247,21 +248,27 @@ async function scrapeJacksonProbate(fromDate: string, toDate: string): Promise<L
 
       if (!caseNum || caseNum.toLowerCase().includes("case")) continue;
 
-      leads.push({
-        id: makeId(COUNTY, STATE, "Probate", caseNum),
-        county: COUNTY, state: STATE,
-        lead_type: "Probate/Estate",
-        owner_name: caseName || null,
-        address: null, city: "Kansas City", zip: null,
-        mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: caseNum,
-        filing_date: formatDate(filedDate),
-        assessed_value: null, tax_year: null,
-        lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-        description: `Jackson County MO Probate — ${caseName || caseNum}`,
-        source_url: url,
-        raw_data: JSON.stringify({ caseNum, caseName, filedDate }),
-      });
+      // Cross-reference against county assessor — only save if property found
+      const properties = await lookupOwnerProperties(caseName, COUNTY, STATE);
+      if (properties.length === 0) continue;
+
+      for (const prop of properties) {
+        leads.push({
+          id: makeId(COUNTY, STATE, "Probate", `${caseNum}-${prop.address}`),
+          county: COUNTY, state: STATE,
+          lead_type: "Probate/Estate",
+          owner_name: caseName || null,
+          address: prop.address, city: prop.city || "Kansas City", zip: prop.zip || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: caseNum,
+          filing_date: formatDate(filedDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Jackson County MO Probate — ${caseName || caseNum}`,
+          source_url: url,
+          raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+        });
+      }
     }
   } catch (e) {
     console.error(`[Jackson MO] Probate error:`, e);
@@ -542,22 +549,30 @@ export async function scrapeBankruptcy(fromDate: string, toDate: string): Promis
       const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
       const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
       const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
-      leads.push({
-        id: makeId("MO", STATE, "Bankruptcy", caseNum),
-        county: "Jackson", // Western MO district covers KC/Jackson area
-        state: STATE,
-        lead_type: "Bankruptcy",
-        owner_name: caseName || caseNum,
-        address: "", city: "", zip: "",
-        mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: caseNum,
-        filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
-        assessed_value: null, tax_year: null,
-        lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-        source_url: link || "https://ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl",
-        description: `MO Bankruptcy — ${caseName || caseNum}`,
-        raw_data: JSON.stringify({ title, caseNum, caseName, pubDate }),
-      });
+
+      // Cross-reference against county assessor — only save if property found
+      const COUNTY = "Jackson"; // Western MO district covers KC/Jackson area
+      const properties = await lookupOwnerProperties(caseName, COUNTY, STATE);
+      if (properties.length === 0) continue;
+
+      for (const prop of properties) {
+        leads.push({
+          id: makeId("MO", STATE, "Bankruptcy", `${caseNum}-${prop.address}`),
+          county: COUNTY,
+          state: STATE,
+          lead_type: "Bankruptcy",
+          owner_name: caseName || caseNum,
+          address: prop.address, city: prop.city || "", zip: prop.zip || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: caseNum,
+          filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          source_url: link || "https://ecf.mowb.uscourts.gov/cgi-bin/rss_outside.pl",
+          description: `MO Bankruptcy — ${caseName || caseNum}`,
+          raw_data: JSON.stringify({ title, caseNum, caseName, pubDate, parcelId: prop.parcelId }),
+        });
+      }
     }
   } catch (e) {
     console.error("[MO] Bankruptcy RSS error:", e);

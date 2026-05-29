@@ -86,6 +86,20 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (_) { /* column already exists — safe to ignore */ }
 }
 
+// ─── ONE-TIME CLEANUP: delete existing addressless leads ─────────────────────
+// Bankruptcy/probate leads saved before assessor cross-reference was wired in
+// had empty address fields. Remove them so the DB only contains actionable leads.
+try {
+  const deleted = db.prepare(
+    "DELETE FROM leads WHERE address IS NULL OR trim(address) = '' OR length(trim(address)) < 5"
+  ).run();
+  if (deleted.changes > 0) {
+    console.log(`[db] Cleaned up ${deleted.changes} addressless leads`);
+  }
+} catch (e) {
+  console.error('[db] Cleanup migration error:', e);
+}
+
 // ─── LEAD TYPE NORMALIZATION ──────────────────────────────────────────────────
 const LEAD_TYPE_MAP: Record<string, string> = {
   "CV": "Code Violation",
@@ -126,6 +140,9 @@ export function normalizeCounty(county: string | null | undefined): string {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 export function upsertLead(lead: Record<string, string | null>) {
+  // Reject leads with no usable property address
+  const addr = (lead.address || '').trim();
+  if (!addr || addr.length < 5) return false;
   const existing = db.prepare("SELECT id FROM leads WHERE id = ?").get(lead.id);
   if (existing) return false; // already have it, skip
   // Sanitize: ensure all named params exist (SQLite throws RangeError if missing)

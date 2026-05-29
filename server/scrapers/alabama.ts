@@ -4,6 +4,7 @@
  */
 
 import { Lead, CountyConfig, makeId, formatDate, fetchWithRetry } from "./base.js";
+import { lookupOwnerProperties } from "./assessor.js";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -272,22 +273,29 @@ export async function scrapeProbate(county: string, fromDate: string, toDate: st
     for (const row of rows) {
       const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
       if (cells.length < 3) continue;
-      const getText = (cell: string) => cell.replace(/<[^>]+>/g, "").trim();
-      const caseNum = getText(cells[0] || "");
-      const name = getText(cells[1] || "");
-      const filed = getText(cells[2] || "");
+      const getCell = (cell: string) => cell.replace(/<[^>]+>/g, "").trim();
+      const caseNum = getCell(cells[0] || "");
+      const name = getCell(cells[1] || "");
+      const filed = getCell(cells[2] || "");
       if (!caseNum && !name) continue;
-      leads.push({
-        id: makeId("PROB", caseNum || name, county, "AL"),
-        county, state: "AL", lead_type: "Probate",
-        owner_name: name || null, address: null, city: county, zip: null,
-        mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: caseNum || null, filing_date: formatDate(filed),
-        assessed_value: null, tax_year: null, lender: null, loan_amount: null,
-        sale_date: null, sale_amount: null,
-        description: `${county} County AL Probate — ${name || caseNum}`,
-        source_url: url, raw_data: JSON.stringify({ caseNum, name, filed }),
-      });
+
+      // Cross-reference against county assessor — only save if property found
+      const properties = await lookupOwnerProperties(name, county, "AL");
+      if (properties.length === 0) continue;
+
+      for (const prop of properties) {
+        leads.push({
+          id: makeId("PROB", `${caseNum || name}-${prop.address}`, county, "AL"),
+          county, state: "AL", lead_type: "Probate",
+          owner_name: name || null, address: prop.address, city: prop.city || county, zip: prop.zip || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: caseNum || null, filing_date: formatDate(filed),
+          assessed_value: null, tax_year: null, lender: null, loan_amount: null,
+          sale_date: null, sale_amount: null,
+          description: `${county} County AL Probate — ${name || caseNum}`,
+          source_url: url, raw_data: JSON.stringify({ caseNum, name, filed, parcelId: prop.parcelId }),
+        });
+      }
     }
   } catch (e) { console.error(`[AL] Probate ${county} error:`, e); }
   return leads;
@@ -295,38 +303,55 @@ export async function scrapeProbate(county: string, fromDate: string, toDate: st
 
 export async function scrapeBankruptcy(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
+  // AL Northern District covers Madison, Morgan, Jefferson, Shelby; Southern covers Montgomery, Autauga, Elmore
+  const RSS_FEEDS = [
+    { url: "https://ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl", counties: ["Madison", "Morgan", "Jefferson", "Shelby"] },
+    { url: "https://ecf.alsb.uscourts.gov/cgi-bin/rss_outside.pl", counties: ["Montgomery", "Autauga", "Elmore"] },
+  ];
   try {
-    const rss = await fetchWithRetry("https://ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl");
-    if (!rss.ok) return leads;
-    const xml = await rss.text();
-    const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-    for (const item of items) {
-      const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
-      const link  = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
-      const desc  = (item.match(/<description><!\[CDATA\[(.+?)\]\]><\/description>/) || item.match(/<description>(.+?)<\/description>/))?.[1]?.trim() || "";
-      const pubDate = (item.match(/<pubDate>(.+?)<\/pubDate>/))?.[1]?.trim() || "";
-      const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
-      // Extract owner name from title: "26-70730-13 Jesse Ray Evin Keeton" -> "Jesse Ray Evin Keeton"
-      const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
-      const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
-      leads.push({
-        id: makeId("AL", "AL", "Bankruptcy", caseNum),
-        county: "AL",
-        state: "AL",
-        lead_type: "Bankruptcy",
-        owner_name: caseName || caseNum,
-        address: "",
-        city: "",
-        zip: "",
-        mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: caseNum,
-        filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0,10)) : formatDate(fromDate),
-        assessed_value: null, tax_year: null,
-        lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-        source_url: link || "https://ecf.alnb.uscourts.gov/cgi-bin/rss_outside.pl",
-        description: `AL Bankruptcy — ${caseName || caseNum}`,
-        raw_data: JSON.stringify({ title, caseNum, caseName, pubDate }),
-      });
+    for (const feed of RSS_FEEDS) {
+      const rss = await fetchWithRetry(feed.url);
+      if (!rss.ok) continue;
+      const xml = await rss.text();
+      const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+      for (const item of items) {
+        const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
+        const link  = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
+        const desc  = (item.match(/<description><!\[CDATA\[(.+?)\]\]><\/description>/) || item.match(/<description>(.+?)<\/description>/))?.[1]?.trim() || "";
+        const pubDate = (item.match(/<pubDate>(.+?)<\/pubDate>/))?.[1]?.trim() || "";
+        const caseNum = (title.match(/([0-9]{2}-[0-9]{5})/)?.[1]) || title;
+        const ownerFromTitle = title.replace(/^[0-9]{2}-[0-9]{5}(-[0-9]+)?\s*/, "").trim();
+        const caseName = ownerFromTitle || desc.replace(/<[^>]+>/g, "").replace(/&[a-z0-9#]+;/g, "").trim();
+
+        // Try each county in this district until we find a property match
+        let found = false;
+        for (const county of feed.counties) {
+          const properties = await lookupOwnerProperties(caseName, county, "AL");
+          if (properties.length === 0) continue;
+          found = true;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId("AL", "AL", "Bankruptcy", `${caseNum}-${prop.address}`),
+              county: prop.city ? county : county,
+              state: "AL",
+              lead_type: "Bankruptcy",
+              owner_name: caseName || caseNum,
+              address: prop.address,
+              city: prop.city || county,
+              zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0,10)) : formatDate(fromDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              source_url: link || feed.url,
+              description: `AL Bankruptcy — ${caseName || caseNum}`,
+              raw_data: JSON.stringify({ title, caseNum, caseName, pubDate, parcelId: prop.parcelId }),
+            });
+          }
+          if (found) break; // stop at first county with a match
+        }
+      }
     }
   } catch (e) {
     console.error("[AL] Bankruptcy RSS error:", e);
