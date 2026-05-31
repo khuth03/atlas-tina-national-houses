@@ -4,7 +4,7 @@
  */
 
 import { Lead, CountyConfig, makeId, formatDate, fetchWithRetry } from "./base.js";
-import { lookupOwnerProperties } from "./assessor.js";
+import { lookupOwnerProperties, lookupByAddress } from "./assessor.js";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -278,8 +278,30 @@ async function scrapeObituaries(county: string, fromDate: string, toDate: string
         raw_data: JSON.stringify({ name: names[i], date: dates[i] }),
       });
     }
+    // Enrich: only keep obituaries where decedent owns property in this county
+    const enriched: Lead[] = [];
+    const CONCURRENCY_O = 5;
+    for (let i = 0; i < leads.length; i += CONCURRENCY_O) {
+      const batch = leads.slice(i, i + CONCURRENCY_O);
+      const results = await Promise.all(batch.map(l => lookupOwnerProperties(l.owner_name || "", county, "AL")));
+      for (let j = 0; j < batch.length; j++) {
+        const properties = results[j];
+        if (properties.length === 0) continue;
+        const lead = batch[j];
+        for (const prop of properties) {
+          enriched.push({
+            ...lead,
+            id: makeId(county, "AL", "Obituary", `${lead.owner_name || ""}-${prop.address}`),
+            address: prop.address, city: prop.city || null, zip: prop.zip || null,
+            owner_name: prop.ownerName || lead.owner_name,
+            raw_data: JSON.stringify({ ...JSON.parse(lead.raw_data || "{}"), parcelId: prop.parcelId }),
+          });
+        }
+      }
+    }
+    return enriched;
   } catch (_) { /* silent */ }
-  return leads;
+  return [];
 }
 
 // ─── BANKRUPTCY — Northern District of AL (ecf.alnb.uscourts.gov) ─────────────
@@ -488,25 +510,115 @@ export async function scrapeCodeViolations(fromDate: string, toDate: string): Pr
   return leads;
 }
 
-// ─── OUT-OF-STATE OWNERS — removed (CourtListener federal dockets ≠ county RE leads) ─
 export async function scrapeOutOfStateOwners(fromDate: string, toDate: string): Promise<Lead[]> {
-  // This source was CourtListener federal civil dockets which returned 0 relevant leads.
-  // Out-of-state owner data requires county assessor parcel data (not yet available via free API).
-  return [];
+  return []; // out-of-state owners excluded per Atlas config
 }
 
-// ─── VACANT / ABANDONED — removed (PACER Ch.7 RSS is not a reliable proxy for vacant RE) ─
+// ─── VACANT / ABANDONED — Birmingham Open Data blight registry ─────────────────
+// Enrichment: lookupByAddress → owner name from county assessor
 export async function scrapeVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Previously used PACER Ch.7 RSS as a proxy for vacant/abandoned — not reliable.
-  // Vacant/abandoned data requires city blight registries (added via code violations above).
-  return [];
+  const leads: Lead[] = [];
+  try {
+    // Birmingham Open Data — vacant/abandoned structures
+    const url = `https://data.birminghamal.gov/resource/vacant-structures.json?$where=date_reported>='${fromDate}T00:00:00'&$limit=200&$order=date_reported DESC`;
+    const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json() as Record<string, string>[];
+      for (const item of data) {
+        const address = item.address || item.street_address || "";
+        if (!address) continue;
+        leads.push({
+          id: makeId("Jefferson", "AL", "Vacant Abandoned", item.id || address),
+          county: "Jefferson", state: "AL",
+          lead_type: "Vacant/Abandoned",
+          owner_name: null,
+          address: address || null, city: "Birmingham", zip: item.zip_code || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: item.id || null,
+          filing_date: formatDate(item.date_reported?.slice(0, 10) || fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Vacant/Abandoned — ${item.status || "Vacant Structure"} — ${address}`,
+          source_url: "https://data.birminghamal.gov/resource/vacant-structures",
+          raw_data: JSON.stringify(item),
+        });
+      }
+    }
+    // Enrich with owner name via assessor address lookup — 10 concurrent
+    const CONCURRENCY_V = 10;
+    const unenriched = leads.filter(l => !l.owner_name && l.address);
+    for (let i = 0; i < unenriched.length; i += CONCURRENCY_V) {
+      const batch = unenriched.slice(i, i + CONCURRENCY_V);
+      const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, l.county, "AL")));
+      for (let j = 0; j < batch.length; j++) {
+        const prop = results[j];
+        if (prop?.ownerName) batch[j].owner_name = prop.ownerName;
+        if (prop?.zip && !batch[j].zip) batch[j].zip = prop.zip;
+        if (prop?.parcelId) batch[j].raw_data = JSON.stringify({ ...JSON.parse(batch[j].raw_data || "{}"), parcelId: prop.parcelId });
+      }
+    }
+  } catch (e) {
+    console.error("[AL] Vacant/Abandoned error:", e);
+  }
+  return leads;
 }
 
-// ─── DIVORCE / EVICTION — removed (federal PACER does not contain state divorce cases) ─
+// ─── DIVORCE — Alabama AlaCourt public search (case type DR) ───────────────────
+// Enrichment: lookupOwnerProperties by case name → only keep leads with a found property
 export async function scrapeDivorce(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Federal PACER RSS does not contain state-level divorce/eviction cases.
-  // AL divorce cases are in AlaCourt (state system) — accessible via scrapeProbate with caseType=DR.
-  return [];
+  const leads: Lead[] = [];
+  const counties = ["Jefferson", "Madison", "Montgomery", "Morgan", "Shelby", "Limestone"];
+  for (const county of counties) {
+    try {
+      const url = `https://v2.alacourt.com/frmPublicCaseSearch.aspx?county=${encodeURIComponent(county)}&caseType=DR&fromDate=${fromDate}&toDate=${toDate}`;
+      const res = await fetchWithRetry(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      const rows = html.match(rowRe) || [];
+      type DivorceRow = { caseNum: string; caseName: string; filedDate: string };
+      const cases: DivorceRow[] = [];
+      for (const row of rows) {
+        const cells: string[] = [];
+        let m;
+        while ((m = cellRe.exec(row)) !== null) cells.push(m[1].replace(/<[^>]+>/g, "").trim());
+        cellRe.lastIndex = 0;
+        if (cells.length < 2 || !cells[0] || cells[0].toLowerCase().includes("case")) continue;
+        cases.push({ caseNum: cells[0], caseName: cells[1], filedDate: cells[2] || fromDate });
+      }
+      const CONCURRENCY = 5;
+      for (let i = 0; i < cases.length; i += CONCURRENCY) {
+        const batch = cases.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(c => lookupOwnerProperties(c.caseName, county, "AL")));
+        for (let j = 0; j < batch.length; j++) {
+          const { caseNum, caseName, filedDate } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId(county, "AL", "Divorce", `${caseNum}-${prop.address}`),
+              county, state: "AL",
+              lead_type: "Divorce",
+              owner_name: prop.ownerName || caseName || null,
+              address: prop.address, city: prop.city || null, zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: formatDate(filedDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              description: `${county} County AL Divorce — ${caseName}`,
+              source_url: url,
+              raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[${county} AL] Divorce error:`, e);
+    }
+  }
+  return leads;
 }
 
 export async function scrapeAlabama(county: string, fromDate: string, toDate: string): Promise<Lead[]> {

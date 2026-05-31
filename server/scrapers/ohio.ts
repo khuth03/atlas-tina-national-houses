@@ -21,7 +21,7 @@
  */
 
 import { Lead, makeId, formatDate, fetchWithRetry, fetchRendered } from "./base.js";
-import { lookupOwnerProperties } from "./assessor.js";
+import { lookupOwnerProperties, lookupByAddress } from "./assessor.js";
 
 // ─── Pre-Foreclosure via Hamilton County Clerk of Courts ──────────────────────
 async function scrapePreForeclosure(fromDate: string, toDate: string): Promise<Lead[]> {
@@ -497,28 +497,190 @@ async function scrapeFSBO(fromDate: string, toDate: string): Promise<Lead[]> {
   return leads;
 }
 
-// ─── Stub exports expected by index.ts ──────────────────────────────────────
-// These were removed (dead sources) but index.ts still references them.
-// They return empty arrays so the scrape run doesn't crash.
+// ─── OBITUARIES — Legacy.com Cincinnati ─────────────────────────────────────
+// Enrichment: lookupOwnerProperties by decedent name → only keep leads with a found property
 export async function scrapeObituaries(fromDate: string, toDate: string): Promise<Lead[]> {
-  // OH obituaries via al.com not applicable; placeholder for future obit source
+  const leads: Lead[] = [];
+  try {
+    const rssUrls = [
+      "https://www.legacy.com/obituaries/cincinnati/rss.aspx",
+      "https://www.legacy.com/obituaries/enquirer/rss.aspx",
+    ];
+    for (const rssUrl of rssUrls) {
+      try {
+        const res = await fetchWithRetry(rssUrl);
+        if (!res.ok) continue;
+        const xml = await res.text();
+        const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+        for (const item of items) {
+          const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
+          const link  = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
+          const pubDate = (item.match(/<pubDate>(.+?)<\/pubDate>/))?.[1]?.trim() || "";
+          if (!title) continue;
+          if (pubDate) {
+            const d = new Date(pubDate);
+            if (!isNaN(d.getTime())) {
+              const ds = d.toISOString().slice(0, 10);
+              if (ds < fromDate || ds > toDate) continue;
+            }
+          }
+          leads.push({
+            id: makeId("Hamilton", "OH", "Obituary", link || title),
+            county: "Hamilton", state: "OH",
+            lead_type: "Obituary",
+            owner_name: title || null,
+            address: null, city: "Cincinnati", zip: null,
+            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+            case_number: null,
+            filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
+            assessed_value: null, tax_year: null,
+            lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+            description: `Obituary — ${title}`,
+            source_url: link || rssUrl,
+            raw_data: JSON.stringify({ title, pubDate }),
+          });
+        }
+      } catch { /* try next URL */ }
+    }
+    // Enrich: only keep obituaries where decedent owns property in Hamilton OH
+    const enriched: Lead[] = [];
+    const CONCURRENCY_O = 5;
+    for (let i = 0; i < leads.length; i += CONCURRENCY_O) {
+      const batch = leads.slice(i, i + CONCURRENCY_O);
+      const results = await Promise.all(batch.map(l => lookupOwnerProperties(l.owner_name || "", "Hamilton", "OH")));
+      for (let j = 0; j < batch.length; j++) {
+        const properties = results[j];
+        if (properties.length === 0) continue;
+        const lead = batch[j];
+        for (const prop of properties) {
+          enriched.push({
+            ...lead,
+            id: makeId("Hamilton", "OH", "Obituary", `${lead.owner_name || ""}-${prop.address}`),
+            address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
+            owner_name: prop.ownerName || lead.owner_name,
+            raw_data: JSON.stringify({ ...JSON.parse(lead.raw_data || "{}"), parcelId: prop.parcelId }),
+          });
+        }
+      }
+    }
+    return enriched;
+  } catch (e) {
+    console.error("[Hamilton OH] Obituaries error:", e);
+  }
   return [];
 }
+// ─── CODE VIOLATIONS — stub (handled inside scrapeOhio) ──────────────────────
 export async function scrapeCodeViolations(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Stub — code violations are handled inside scrapeOhio() via scrapeCodeViolationsHamilton()
-  return [];
+  return []; // handled inside scrapeOhio() via scrapeCodeViolationsHamilton()
 }
+// ─── DIVORCE — Hamilton County Clerk of Courts (case type DR) ────────────────
+// Enrichment: lookupOwnerProperties by case name → only keep leads with a found property
 export async function scrapeDivorce(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Federal PACER does not contain state divorce cases
-  return [];
+  const leads: Lead[] = [];
+  try {
+    const searchUrl = "https://www.courtclerk.org/records-search/case-search/";
+    const res = await fetchWithRetry(searchUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ caseType: "DR", fromFiledDate: fromDate, toFiledDate: toDate, submit: "Search" }).toString(),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      const rows = html.match(rowRe) || [];
+      type DivorceRow = { caseNum: string; caseName: string; filedDate: string };
+      const cases: DivorceRow[] = [];
+      for (const row of rows) {
+        const cells: string[] = [];
+        let m;
+        while ((m = cellRe.exec(row)) !== null) cells.push(m[1].replace(/<[^>]+>/g, "").trim());
+        cellRe.lastIndex = 0;
+        if (cells.length < 2 || !cells[0] || cells[0].toLowerCase().includes("case")) continue;
+        cases.push({ caseNum: cells[0], caseName: cells[1], filedDate: cells[2] || fromDate });
+      }
+      const CONCURRENCY = 5;
+      for (let i = 0; i < cases.length; i += CONCURRENCY) {
+        const batch = cases.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(c => lookupOwnerProperties(c.caseName, "Hamilton", "OH")));
+        for (let j = 0; j < batch.length; j++) {
+          const { caseNum, caseName, filedDate } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId("Hamilton", "OH", "Divorce", `${caseNum}-${prop.address}`),
+              county: "Hamilton", state: "OH",
+              lead_type: "Divorce",
+              owner_name: prop.ownerName || caseName || null,
+              address: prop.address, city: prop.city || "Cincinnati", zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: formatDate(filedDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              description: `Hamilton County OH Divorce — ${caseName}`,
+              source_url: searchUrl,
+              raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[Hamilton OH] Divorce error:", e);
+  }
+  return leads;
+}
+// ─── VACANT/ABANDONED — Cincinnati Open Data blight registry ─────────────────
+// Enrichment: lookupByAddress → owner name from Hamilton County Auditor
+export async function scrapeVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  try {
+    const url = `https://data.cincinnati-oh.gov/resource/ggwt-jnac.json?$where=date_entered>='${fromDate}T00:00:00'&$limit=300&$order=date_entered DESC`;
+    const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json() as Record<string, string>[];
+      for (const item of data) {
+        const address = item.address || item.incident_address || "";
+        if (!address) continue;
+        leads.push({
+          id: makeId("Hamilton", "OH", "Vacant Abandoned", item.id || address),
+          county: "Hamilton", state: "OH",
+          lead_type: "Vacant/Abandoned",
+          owner_name: null,
+          address: address || null, city: "Cincinnati", zip: item.zip_code || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: item.id || null,
+          filing_date: formatDate(item.date_entered?.slice(0, 10) || fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Vacant/Abandoned — ${item.status || "Vacant Structure"} — ${address}`,
+          source_url: "https://data.cincinnati-oh.gov/Neighborhoods/Vacant-Structures/ggwt-jnac",
+          raw_data: JSON.stringify(item),
+        });
+      }
+    }
+    // Enrich with owner name via assessor address lookup — 10 concurrent
+    const CONCURRENCY_V = 10;
+    const unenriched = leads.filter(l => !l.owner_name && l.address);
+    for (let i = 0; i < unenriched.length; i += CONCURRENCY_V) {
+      const batch = unenriched.slice(i, i + CONCURRENCY_V);
+      const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, "Hamilton", "OH")));
+      for (let j = 0; j < batch.length; j++) {
+        const prop = results[j];
+        if (prop?.ownerName) batch[j].owner_name = prop.ownerName;
+        if (prop?.zip && !batch[j].zip) batch[j].zip = prop.zip;
+        if (prop?.parcelId) batch[j].raw_data = JSON.stringify({ ...JSON.parse(batch[j].raw_data || "{}"), parcelId: prop.parcelId });
+      }
+    }
+  } catch (e) {
+    console.error("[Hamilton OH] Vacant/Abandoned error:", e);
+  }
+  return leads;
 }
 export async function scrapeOutOfStateOwners(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Requires county assessor parcel data — not yet available
-  return [];
-}
-export async function scrapeVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
-  // Covered by code violations (Cincinnati blight registry)
-  return [];
+  return []; // out-of-state owners excluded per Atlas config
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -539,6 +701,9 @@ export async function scrapeOhio(county: string, fromDate: string, toDate: strin
     scrapeFireDamage(fromDate, toDate),
     scrapeBankruptcy(fromDate, toDate),
     scrapeCodeViolationsHamilton(fromDate, toDate),
+    scrapeObituaries(fromDate, toDate),
+    scrapeDivorce(fromDate, toDate),
+    scrapeVacantAbandoned(fromDate, toDate),
   ]);
 
   return results

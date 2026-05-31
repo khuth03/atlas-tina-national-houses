@@ -18,7 +18,7 @@
 
 import * as cheerio from "cheerio";
 import { Lead, makeId, formatDate, fetchWithRetry, CountyConfig } from "./base.js";
-import { lookupOwnerProperties } from "./assessor.js";
+import { lookupOwnerProperties, lookupByAddress } from "./assessor.js";
 
 const STATE = "MO";
 
@@ -582,6 +582,504 @@ async function scrapeKCCraigslistFSBO(fromDate: string, toDate: string): Promise
   return leads;
 }
 
+// ─── LIS PENDENS — Missouri Case.net (all 4 counties) ──────────────────────────
+// Missouri Case.net public search — case type "L" = Lis Pendens
+// County codes: Jackson=16, Clay=12, Cass=7, Platte=25
+// Enrichment: lookupOwnerProperties by case name → only keep leads with a found property
+async function scrapeLisPendens(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  const counties = [
+    { name: "Jackson", code: "16", city: "Kansas City" },
+    { name: "Clay",    code: "12", city: "Liberty" },
+    { name: "Cass",    code: "7",  city: "Harrisonville" },
+    { name: "Platte",  code: "25", city: "Platte City" },
+  ];
+  const url = `https://www.courts.mo.gov/casenet/cases/searchCases.do`;
+  for (const { name, code } of counties) {
+    try {
+      const body = new URLSearchParams({
+        countyCode: code,
+        caseType: "L",
+        fromDate, toDate,
+        submit: "Search",
+      }).toString();
+      const res = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      const rows = html.match(rowRe) || [];
+      type CaseRow = { caseNum: string; caseName: string; filedDate: string };
+      const cases: CaseRow[] = [];
+      for (const row of rows) {
+        const cells: string[] = [];
+        let m;
+        while ((m = cellRe.exec(row)) !== null) {
+          cells.push(m[1].replace(/<[^>]+>/g, "").trim());
+        }
+        cellRe.lastIndex = 0;
+        if (cells.length < 2 || !cells[0] || cells[0].toLowerCase().includes("case")) continue;
+        cases.push({ caseNum: cells[0], caseName: cells[1], filedDate: cells[2] || fromDate });
+      }
+      // Batch assessor enrichment — 5 concurrent
+      const CONCURRENCY = 5;
+      for (let i = 0; i < cases.length; i += CONCURRENCY) {
+        const batch = cases.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(c => lookupOwnerProperties(c.caseName, name, STATE)));
+        for (let j = 0; j < batch.length; j++) {
+          const { caseNum, caseName, filedDate } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue; // skip if no property found
+          for (const prop of properties) {
+            leads.push({
+              id: makeId(name, STATE, "Lis Pendens", `${caseNum}-${prop.address}`),
+              county: name, state: STATE,
+              lead_type: "Lis Pendens",
+              owner_name: prop.ownerName || caseName || null,
+              address: prop.address, city: prop.city || "Kansas City", zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: formatDate(filedDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              description: `${name} County MO Lis Pendens — ${caseName}`,
+              source_url: url,
+              raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[${name} MO] Lis Pendens error:`, e);
+    }
+  }
+  return leads;
+}
+
+// ─── PROBATE — Missouri Case.net (Clay, Cass, Platte) ────────────────────────
+// Jackson probate is handled by scrapeJacksonProbate above (with assessor enrichment)
+// Clay=12, Cass=7, Platte=25
+// Enrichment: lookupOwnerProperties by case name → only keep leads with a found property
+async function scrapeMOProbate(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  const counties = [
+    { name: "Clay",   code: "12", city: "Liberty" },
+    { name: "Cass",   code: "7",  city: "Harrisonville" },
+    { name: "Platte", code: "25", city: "Platte City" },
+  ];
+  const url = `https://www.courts.mo.gov/casenet/cases/searchCases.do`;
+  for (const { name, code, city } of counties) {
+    try {
+      const body = new URLSearchParams({
+        countyCode: code,
+        caseType: "P",
+        fromDate, toDate,
+        submit: "Search",
+      }).toString();
+      const res = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      const rows = html.match(rowRe) || [];
+      type CaseRow = { caseNum: string; caseName: string; filedDate: string };
+      const cases: CaseRow[] = [];
+      for (const row of rows) {
+        const cells: string[] = [];
+        let m;
+        while ((m = cellRe.exec(row)) !== null) {
+          cells.push(m[1].replace(/<[^>]+>/g, "").trim());
+        }
+        cellRe.lastIndex = 0;
+        if (cells.length < 2 || !cells[0] || cells[0].toLowerCase().includes("case")) continue;
+        cases.push({ caseNum: cells[0], caseName: cells[1], filedDate: cells[2] || fromDate });
+      }
+      // Batch assessor enrichment — 5 concurrent, only keep leads with a found property
+      const CONCURRENCY = 5;
+      for (let i = 0; i < cases.length; i += CONCURRENCY) {
+        const batch = cases.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(c => lookupOwnerProperties(c.caseName, name, STATE)));
+        for (let j = 0; j < batch.length; j++) {
+          const { caseNum, caseName, filedDate } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId(name, STATE, "Probate", `${caseNum}-${prop.address}`),
+              county: name, state: STATE,
+              lead_type: "Probate/Estate",
+              owner_name: prop.ownerName || caseName || null,
+              address: prop.address, city: prop.city || city, zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: formatDate(filedDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              description: `${name} County MO Probate — ${caseName}`,
+              source_url: url,
+              raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[${name} MO] Probate error:`, e);
+    }
+  }
+  return leads;
+}
+// ─── DIVORCE — Missouri Case.net (all 4 counties, case type "D") ──────────────
+// Enrichment: lookupOwnerProperties by case name → only keep leads with a found property
+async function scrapeMODivorce(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  const counties = [
+    { name: "Jackson", code: "16", city: "Kansas City" },
+    { name: "Clay",    code: "12", city: "Liberty" },
+    { name: "Cass",    code: "7",  city: "Harrisonville" },
+    { name: "Platte",  code: "25", city: "Platte City" },
+  ];
+  const url = `https://www.courts.mo.gov/casenet/cases/searchCases.do`;
+  for (const { name, code, city } of counties) {
+    try {
+      const body = new URLSearchParams({
+        countyCode: code,
+        caseType: "D",
+        fromDate, toDate,
+        submit: "Search",
+      }).toString();
+      const res = await fetchWithRetry(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+      const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+      const rows = html.match(rowRe) || [];
+      type DivorceRow = { caseNum: string; caseName: string; filedDate: string };
+      const cases: DivorceRow[] = [];
+      for (const row of rows) {
+        const cells: string[] = [];
+        let m;
+        while ((m = cellRe.exec(row)) !== null) {
+          cells.push(m[1].replace(/<[^>]+>/g, "").trim());
+        }
+        cellRe.lastIndex = 0;
+        if (cells.length < 2 || !cells[0] || cells[0].toLowerCase().includes("case")) continue;
+        cases.push({ caseNum: cells[0], caseName: cells[1], filedDate: cells[2] || fromDate });
+      }
+      // Batch assessor enrichment — 5 concurrent, only keep leads with a found property
+      const CONCURRENCY = 5;
+      for (let i = 0; i < cases.length; i += CONCURRENCY) {
+        const batch = cases.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(batch.map(c => lookupOwnerProperties(c.caseName, name, STATE)));
+        for (let j = 0; j < batch.length; j++) {
+          const { caseNum, caseName, filedDate } = batch[j];
+          const properties = results[j];
+          if (properties.length === 0) continue;
+          for (const prop of properties) {
+            leads.push({
+              id: makeId(name, STATE, "Divorce", `${caseNum}-${prop.address}`),
+              county: name, state: STATE,
+              lead_type: "Divorce",
+              owner_name: prop.ownerName || caseName || null,
+              address: prop.address, city: prop.city || city, zip: prop.zip || null,
+              mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+              case_number: caseNum,
+              filing_date: formatDate(filedDate),
+              assessed_value: null, tax_year: null,
+              lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+              description: `${name} County MO Divorce — ${caseName}`,
+              source_url: url,
+              raw_data: JSON.stringify({ caseNum, caseName, filedDate, parcelId: prop.parcelId }),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[${name} MO] Divorce error:`, e);
+    }
+  }
+  return leads;
+}
+// ─── OBITUARIES — Legacy.com KC metro ────────────────────────────────────────
+// Legacy.com RSS feed for Kansas City area obituaries
+async function scrapeMOObituaries(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  try {
+    // Legacy.com RSS for Kansas City Star obituaries
+    const rssUrls = [
+      "https://www.legacy.com/obituaries/kansascity/rss.aspx",
+      "https://www.legacy.com/obituaries/kcstar/rss.aspx",
+    ];
+    for (const rssUrl of rssUrls) {
+      try {
+        const res = await fetchWithRetry(rssUrl);
+        if (!res.ok) continue;
+        const xml = await res.text();
+        const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+        for (const item of items) {
+          const title = (item.match(/<title><!\[CDATA\[(.+?)\]\]><\/title>/) || item.match(/<title>(.+?)<\/title>/))?.[1]?.trim() || "";
+          const link = (item.match(/<link>(.+?)<\/link>/))?.[1]?.trim() || "";
+          const pubDate = (item.match(/<pubDate>(.+?)<\/pubDate>/))?.[1]?.trim() || "";
+          const desc = (item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || item.match(/<description>([\s\S]*?)<\/description>/))?.[1]?.trim() || "";
+          if (!title) continue;
+          // Filter to date range
+          if (pubDate) {
+            const d = new Date(pubDate);
+            if (!isNaN(d.getTime())) {
+              const ds = d.toISOString().slice(0, 10);
+              if (ds < fromDate || ds > toDate) continue;
+            }
+          }
+          leads.push({
+            id: makeId("Jackson", STATE, "Obituary", link || title),
+            county: "Jackson", state: STATE,
+            lead_type: "Obituary",
+            owner_name: title || null,
+            address: null, city: "Kansas City", zip: null,
+            mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+            case_number: null,
+            filing_date: pubDate ? formatDate(new Date(pubDate).toISOString().slice(0, 10)) : formatDate(fromDate),
+            assessed_value: null, tax_year: null,
+            lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+            description: desc.replace(/<[^>]+>/g, "").slice(0, 200) || `Obituary — ${title}`,
+            source_url: link || rssUrl,
+            raw_data: JSON.stringify({ title, pubDate }),
+          });
+        }
+      } catch { /* try next URL */ }
+    }
+
+    // Enrich obituaries with property lookup by decedent name — 5 concurrent
+    // Only keep obituaries where the decedent owns property in the area
+    const enrichedObitLeads: Lead[] = [];
+    const CONCURRENCY_O = 5;
+    for (let i = 0; i < leads.length; i += CONCURRENCY_O) {
+      const batch = leads.slice(i, i + CONCURRENCY_O);
+      const results = await Promise.all(batch.map(l => lookupOwnerProperties(l.owner_name || '', 'Jackson', STATE)));
+      for (let j = 0; j < batch.length; j++) {
+        const properties = results[j];
+        if (properties.length === 0) continue;
+        const lead = batch[j];
+        for (const prop of properties) {
+          enrichedObitLeads.push({
+            ...lead,
+            id: makeId('Jackson', STATE, 'Obituary', `${lead.owner_name || ''}-${prop.address}`),
+            address: prop.address,
+            city: prop.city || 'Kansas City',
+            zip: prop.zip || null,
+            owner_name: prop.ownerName || lead.owner_name,
+            raw_data: JSON.stringify({ ...JSON.parse(lead.raw_data || '{}'), parcelId: prop.parcelId }),
+          });
+        }
+      }
+    }
+    return enrichedObitLeads;
+
+  } catch (e) {
+    console.error(`[MO] Obituaries error:`, e);
+  }
+  return [];
+}
+
+// ─── WATER SHUTOFFS — KC 311 Open Data (Jackson County only) ─────────────────
+// Already covered inside scrapeKCCodeViolations for Jackson.
+// This function adds a dedicated Water Shutoff type for Clay/Platte/Cass
+// using their county utility / 311 portals where available.
+async function scrapeMOWaterShutoffs(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  try {
+    // KC 311 Socrata — filter specifically for water service requests
+    // This covers Jackson County (Kansas City)
+    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=500&$order=creation_date DESC&$q=water`;
+    const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json() as Record<string, string>[];
+      for (const item of data) {
+        const reqType = (item.request_type || item.type || "").toLowerCase();
+        if (!reqType.includes("water") && !reqType.includes("shutoff") && !reqType.includes("utility")) continue;
+        const address = item.address || item.street_address || "";
+        if (!address) continue;
+        leads.push({
+          id: makeId("Jackson", STATE, "Water Shutoff", item.service_request_num || address),
+          county: "Jackson", state: STATE,
+          lead_type: "Water Shutoff",
+          owner_name: null,
+          address: address || null, city: "Kansas City", zip: item.zip_code || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: item.service_request_num || null,
+          filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Water Shutoff — ${item.request_type || "Water Service Issue"} — ${address}`,
+          source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+          raw_data: JSON.stringify(item),
+        });
+      }
+    }
+
+    // Enrich with owner name via assessor address lookup — 10 concurrent
+    const CONCURRENCY_ADDR = 10;
+    const unenrichedAddr = leads.filter(l => !l.owner_name && l.address);
+    for (let i = 0; i < unenrichedAddr.length; i += CONCURRENCY_ADDR) {
+      const batch = unenrichedAddr.slice(i, i + CONCURRENCY_ADDR);
+      const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, l.county, STATE)));
+      for (let j = 0; j < batch.length; j++) {
+        const prop = results[j];
+        if (prop?.ownerName) batch[j].owner_name = prop.ownerName;
+        if (prop?.zip && !batch[j].zip) batch[j].zip = prop.zip;
+        if (prop?.parcelId) batch[j].raw_data = JSON.stringify({ ...JSON.parse(batch[j].raw_data || '{}'), parcelId: prop.parcelId });
+      }
+    }
+
+  } catch (e) {
+    console.error(`[MO] Water Shutoffs error:`, e);
+  }
+  return leads;
+}
+
+// ─── FIRE DAMAGE — KC 311 + KC Fire Open Data ─────────────────────────────────
+// Jackson County: KC Open Data fire incidents
+// Clay/Platte/Cass: No open data portal available — use KC 311 fire/structure requests
+async function scrapeMOFireDamage(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  try {
+    // KC Fire incidents via KC Open Data (Jackson County)
+    const url = `https://data.kcmo.org/resource/rvmt-pkmq.json?$where=create_time_incident>='${fromDate}T00:00:00'&$limit=200&$order=create_time_incident DESC`;
+    const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json() as Record<string, string>[];
+      for (const item of data) {
+        const type = (item.incident_type_desc || item.type_desc || "").toLowerCase();
+        if (!type.includes("fire") && !type.includes("structure") && !type.includes("residential")) continue;
+        const address = item.address_x || item.incident_address || "";
+        if (!address) continue;
+        leads.push({
+          id: makeId("Jackson", STATE, "Fire Damage", item.incident_no || address),
+          county: "Jackson", state: STATE,
+          lead_type: "Fire Damage",
+          owner_name: null,
+          address: address || null, city: "Kansas City", zip: null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: item.incident_no || null,
+          filing_date: formatDate(item.create_time_incident?.slice(0, 10) || fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Fire Damage — ${item.incident_type_desc || "Structure Fire"} — ${address}`,
+          source_url: "https://data.kcmo.org/Public-Safety/Kansas-City-Fire-Incidents/rvmt-pkmq",
+          raw_data: JSON.stringify(item),
+        });
+      }
+    }
+    // Fallback: KC 311 fire/structure damage requests
+    const url311 = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=200&$order=creation_date DESC&$q=fire`;
+    const res311 = await fetchWithRetry(url311, { headers: { Accept: "application/json" } });
+    if (res311.ok) {
+      const data = await res311.json() as Record<string, string>[];
+      for (const item of data) {
+        const reqType = (item.request_type || item.type || "").toLowerCase();
+        if (!reqType.includes("fire") && !reqType.includes("structure") && !reqType.includes("damage")) continue;
+        const address = item.address || item.street_address || "";
+        if (!address) continue;
+        const county = "Jackson"; // KC 311 covers Jackson
+        leads.push({
+          id: makeId(county, STATE, "Fire Damage", item.service_request_num || address),
+          county, state: STATE,
+          lead_type: "Fire Damage",
+          owner_name: null,
+          address: address || null, city: "Kansas City", zip: item.zip_code || null,
+          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+          case_number: item.service_request_num || null,
+          filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
+          assessed_value: null, tax_year: null,
+          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+          description: `Fire Damage — ${item.request_type || "Structure Fire"} — ${address}`,
+          source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+          raw_data: JSON.stringify(item),
+        });
+      }
+    }
+
+    // Enrich with owner name via assessor address lookup — 10 concurrent
+    const CONCURRENCY_ADDR = 10;
+    const unenrichedAddr = leads.filter(l => !l.owner_name && l.address);
+    for (let i = 0; i < unenrichedAddr.length; i += CONCURRENCY_ADDR) {
+      const batch = unenrichedAddr.slice(i, i + CONCURRENCY_ADDR);
+      const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, l.county, STATE)));
+      for (let j = 0; j < batch.length; j++) {
+        const prop = results[j];
+        if (prop?.ownerName) batch[j].owner_name = prop.ownerName;
+        if (prop?.zip && !batch[j].zip) batch[j].zip = prop.zip;
+        if (prop?.parcelId) batch[j].raw_data = JSON.stringify({ ...JSON.parse(batch[j].raw_data || '{}'), parcelId: prop.parcelId });
+      }
+    }
+
+  } catch (e) {
+    console.error(`[MO] Fire Damage error:`, e);
+  }
+  return leads;
+}
+
+// ─── VACANT/ABANDONED — KC 311 Open Data ─────────────────────────────────────
+async function scrapeMOVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
+  const leads: Lead[] = [];
+  try {
+    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=300&$order=creation_date DESC&$q=vacant`;
+    const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return leads;
+    const data = await res.json() as Record<string, string>[];
+    for (const item of data) {
+      const reqType = (item.request_type || item.type || "").toLowerCase();
+      if (!reqType.includes("vacant") && !reqType.includes("abandon") && !reqType.includes("blight")) continue;
+      const address = item.address || item.street_address || "";
+      if (!address) continue;
+      leads.push({
+        id: makeId("Jackson", STATE, "Vacant Abandoned", item.service_request_num || address),
+        county: "Jackson", state: STATE,
+        lead_type: "Vacant/Abandoned",
+        owner_name: null,
+        address: address || null, city: "Kansas City", zip: item.zip_code || null,
+        mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
+        case_number: item.service_request_num || null,
+        filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
+        assessed_value: null, tax_year: null,
+        lender: null, loan_amount: null, sale_date: null, sale_amount: null,
+        description: `Vacant/Abandoned — ${item.request_type || "Vacant Property"} — ${address}`,
+        source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+        raw_data: JSON.stringify(item),
+      });
+    }
+
+    // Enrich with owner name via assessor address lookup — 10 concurrent
+    const CONCURRENCY_ADDR = 10;
+    const unenrichedAddr = leads.filter(l => !l.owner_name && l.address);
+    for (let i = 0; i < unenrichedAddr.length; i += CONCURRENCY_ADDR) {
+      const batch = unenrichedAddr.slice(i, i + CONCURRENCY_ADDR);
+      const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, l.county, STATE)));
+      for (let j = 0; j < batch.length; j++) {
+        const prop = results[j];
+        if (prop?.ownerName) batch[j].owner_name = prop.ownerName;
+        if (prop?.zip && !batch[j].zip) batch[j].zip = prop.zip;
+        if (prop?.parcelId) batch[j].raw_data = JSON.stringify({ ...JSON.parse(batch[j].raw_data || '{}'), parcelId: prop.parcelId });
+      }
+    }
+
+  } catch (e) {
+    console.error(`[MO] Vacant/Abandoned error:`, e);
+  }
+  return leads;
+}
+
 // ─── BANKRUPTCY — Western District of MO (PACER RSS) ─────────────────────────
 export async function scrapeBankruptcy(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
@@ -650,17 +1148,32 @@ export async function scrapeProbate(fromDate: string, toDate: string): Promise<L
 // ─── MAIN EXPORT ─────────────────────────────────────────────────────────────
 export async function scrapeAll(fromDate: string, toDate: string): Promise<Lead[]> {
   const results = await Promise.allSettled([
-    scrapeJacksonPreForeclosure(fromDate, toDate),
+    // Pre-Foreclosure / Lis Pendens
+    scrapeJacksonPreForeclosure(fromDate, toDate),  // Jackson Recorder of Deeds
+    scrapeLisPendens(fromDate, toDate),             // Case.net Lis Pendens (all 4 counties)
+    // Tax Delinquent
     scrapeJacksonTaxDelinquent(fromDate, toDate),
+    // Sheriff Sales
     scrapeJacksonSheriffSales(fromDate, toDate),
-    scrapeJacksonProbate(fromDate, toDate),
     scrapeClayCounty(fromDate, toDate),
     scrapePlatteCounty(fromDate, toDate),
     scrapeCassCounty(fromDate, toDate),
-    scrapeKCCraigslistFSBO(fromDate, toDate),
-    scrapeKCCodeViolations(fromDate, toDate),
+    // Probate
+    scrapeJacksonProbate(fromDate, toDate),
+    scrapeMOProbate(fromDate, toDate), // Clay, Cass, Platte via Case.net
+    // Bankruptcy
     scrapeBankruptcy(fromDate, toDate),
+    // Code Violations / Fire / Water / Vacant
+    scrapeKCCodeViolations(fromDate, toDate),
+    scrapeMOFireDamage(fromDate, toDate),
+    scrapeMOWaterShutoffs(fromDate, toDate),
+    scrapeMOVacantAbandoned(fromDate, toDate),
+    // FSBO
+    scrapeKCCraigslistFSBO(fromDate, toDate),
+    // Divorce
+    scrapeMODivorce(fromDate, toDate),
+    // Obituaries
+    scrapeMOObituaries(fromDate, toDate),
   ]);
-
   return results.flatMap(r => r.status === "fulfilled" ? r.value : []);
 }

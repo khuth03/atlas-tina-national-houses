@@ -671,6 +671,141 @@ const LOOKUP_MAP: Record<CountyKey, (name: string) => Promise<AssessorProperty[]
 };
 
 /**
+ * Look up the owner of a property by street address in a given county.
+ * Used to enrich address-based leads (fire damage, water shutoffs, code violations, vacant/abandoned).
+ * Returns owner name + parcel data, or null if not found.
+ *
+ * @param address  Street address string (e.g. "1234 Main St")
+ * @param county   County name (e.g. "Hamilton")
+ * @param state    State abbreviation (e.g. "OH")
+ */
+export async function lookupByAddress(
+  address: string,
+  county: string,
+  state: string
+): Promise<AssessorProperty | null> {
+  if (!address || address.trim().length < 5) return null;
+  const addrClean = address.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').replace(/\s+/g, ' ');
+  const parts = addrClean.split(' ');
+  const streetNum = parts[0];
+  const streetName = parts[1] || '';
+  if (!streetNum || !/^\d+$/.test(streetNum)) return null;
+  const countyKey = county.toLowerCase().replace(/\s+county$/i, '').replace(/\s+/g, '-');
+  try {
+    if (state === 'MO') {
+      // Jackson/Clay/Cass/Platte MO — ArcGIS Parcels layer by SITUS_ADDR
+      const parcelsUrl = 'https://services3.arcgis.com/4LOAHoFXfea6Y3Et/ArcGIS/rest/services/ParcelViewer_Parcels_View/FeatureServer/0/query';
+      const qUrl = new URL(parcelsUrl);
+      qUrl.searchParams.set('where', `UPPER(SITUS_ADDR) LIKE '${streetNum} ${streetName}%'`);
+      qUrl.searchParams.set('outFields', 'PARCELID,OWNER_NAME,SITUS_ADDR,SITUS_CITY,SITUS_ZIP');
+      qUrl.searchParams.set('returnGeometry', 'false');
+      qUrl.searchParams.set('f', 'json');
+      qUrl.searchParams.set('resultRecordCount', '1');
+      const res = await fetchWithRetry(qUrl.toString());
+      if (res.ok) {
+        const data = await res.json() as { features?: { attributes: Record<string, string> }[] };
+        const f = data.features?.[0]?.attributes;
+        if (f && f.SITUS_ADDR) {
+          return {
+            address: f.SITUS_ADDR,
+            city: f.SITUS_CITY || 'Kansas City',
+            state: 'MO',
+            zip: f.SITUS_ZIP || undefined,
+            parcelId: f.PARCELID || undefined,
+            ownerName: f.OWNER_NAME || undefined,
+          };
+        }
+      }
+    } else if (state === 'OH' && countyKey === 'hamilton') {
+      // Hamilton OH — wedge1.hcauditor.org address search
+      const searchUrl = `https://wedge1.hcauditor.org/search/re/address/${encodeURIComponent(addrClean)}/1`;
+      const res = await fetchWithRetry(searchUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+        let rowMatch;
+        while ((rowMatch = rowRe.exec(html)) !== null) {
+          const cells: string[] = [];
+          const cr = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+          let cellMatch;
+          while ((cellMatch = cr.exec(rowMatch[1])) !== null) {
+            cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim());
+          }
+          if (cells.length < 3) continue;
+          const addr = cells[2] || cells[1] || '';
+          if (!addr || !/\d+\s+[A-Za-z]/.test(addr)) continue;
+          const parcelMatch = rowMatch[1].match(/\/view\/re\/(\d+)\//i);
+          return {
+            address: addr,
+            city: cells[3] || 'Cincinnati',
+            state: 'OH',
+            zip: cells[4] || undefined,
+            parcelId: parcelMatch?.[1] || undefined,
+            ownerName: cells[1] || undefined,
+          };
+        }
+      }
+    } else if (state === 'AL') {
+      // Jefferson AL — JCCAL ArcGIS
+      if (countyKey === 'jefferson') {
+        const qUrl = new URL('https://gis.jccal.org/arcgis/rest/services/ParcelViewer/ParcelViewer_Parcels_View/FeatureServer/0/query');
+        qUrl.searchParams.set('where', `UPPER(SITUS_ADDR) LIKE '${streetNum} ${streetName}%'`);
+        qUrl.searchParams.set('outFields', 'PARCELID,OWNER1,SITUS_ADDR,SITUS_CITY,SITUS_ZIP');
+        qUrl.searchParams.set('returnGeometry', 'false');
+        qUrl.searchParams.set('f', 'json');
+        qUrl.searchParams.set('resultRecordCount', '1');
+        const res = await fetchWithRetry(qUrl.toString(), {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' },
+        });
+        if (res.ok) {
+          const data = await res.json() as { features?: { attributes: Record<string, string> }[] };
+          const f = data.features?.[0]?.attributes;
+          if (f && f.SITUS_ADDR) {
+            return {
+              address: f.SITUS_ADDR,
+              city: f.SITUS_CITY || 'Birmingham',
+              state: 'AL',
+              zip: f.SITUS_ZIP || undefined,
+              parcelId: f.PARCELID || undefined,
+              ownerName: f.OWNER1 || undefined,
+            };
+          }
+        }
+      } else if (countyKey === 'madison') {
+        const qUrl = new URL('https://services.arcgis.com/V6ZHFr6zdgNZuVG0/ArcGIS/rest/services/Madison_County_Parcels/FeatureServer/0/query');
+        qUrl.searchParams.set('where', `UPPER(SITUS_ADDR) LIKE '${streetNum} ${streetName}%'`);
+        qUrl.searchParams.set('outFields', 'PARCELID,OWNER_NAME,SITUS_ADDR,SITUS_CITY,SITUS_ZIP');
+        qUrl.searchParams.set('returnGeometry', 'false');
+        qUrl.searchParams.set('f', 'json');
+        qUrl.searchParams.set('resultRecordCount', '1');
+        const res = await fetchWithRetry(qUrl.toString(), {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' },
+        });
+        if (res.ok) {
+          const data = await res.json() as { features?: { attributes: Record<string, string> }[] };
+          const f = data.features?.[0]?.attributes;
+          if (f && f.SITUS_ADDR) {
+            return {
+              address: f.SITUS_ADDR,
+              city: f.SITUS_CITY || 'Huntsville',
+              state: 'AL',
+              zip: f.SITUS_ZIP || undefined,
+              parcelId: f.PARCELID || undefined,
+              ownerName: f.OWNER_NAME || undefined,
+            };
+          }
+        }
+      }
+    }
+  } catch {
+    // enrichment is best-effort, silently fail
+  }
+  return null;
+}
+
+/**
  * Look up all properties owned by a person in a given county.
  * Returns an empty array if no properties found or lookup fails.
  *
