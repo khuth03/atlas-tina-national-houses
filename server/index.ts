@@ -119,7 +119,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
 
   // ── API Routes ──────────────────────────────────────────────────────────────
 
@@ -276,6 +276,21 @@ async function startServer() {
     const { fromDate, toDate } = getDateRange(daysBack);
     runScrapeJob(fromDate, toDate).catch(console.error);
     res.json({ ok: true, message: `Historical scrape started (${daysBack} days)`, from_date: fromDate, to_date: toDate });
+  });
+
+  // POST /api/import — bulk import leads (accepts array of lead objects, idempotent)
+  app.post("/api/import", (req, res) => {
+    const leads: Record<string, string | null>[] = req.body;
+    if (!Array.isArray(leads)) return res.status(400).json({ error: "Expected array of leads" });
+    let inserted = 0;
+    let skipped = 0;
+    for (const lead of leads) {
+      try {
+        const isNew = upsertLead(lead);
+        if (isNew) inserted++; else skipped++;
+      } catch { skipped++; }
+    }
+    res.json({ ok: true, inserted, skipped, total: leads.length });
   });
 
   // POST /api/seed — inject demo leads
