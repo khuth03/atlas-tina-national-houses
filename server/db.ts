@@ -162,19 +162,24 @@ export function upsertLead(lead: Record<string, string | null>) {
   normalized.county = normalizeCounty(lead.county);
   const safeLead: Record<string, string | null> = {};
   for (const f of fields) safeLead[f] = (normalized[f] !== undefined ? normalized[f] : null);
+  // Preserve original scraped_at if provided (critical for imports — keeps original lead date)
+  const scrapedAt = (lead.scraped_at && typeof lead.scraped_at === 'string' && lead.scraped_at.length > 0)
+    ? lead.scraped_at : null;
   db.prepare(`
     INSERT INTO leads (
       id, county, state, lead_type, owner_name, address, city, zip,
       mailing_address, mailing_city, mailing_state, mailing_zip,
       case_number, filing_date, assessed_value, tax_year, lender,
-      loan_amount, sale_date, sale_amount, description, source_url, raw_data
+      loan_amount, sale_date, sale_amount, description, source_url, raw_data,
+      scraped_at
     ) VALUES (
       @id, @county, @state, @lead_type, @owner_name, @address, @city, @zip,
       @mailing_address, @mailing_city, @mailing_state, @mailing_zip,
       @case_number, @filing_date, @assessed_value, @tax_year, @lender,
-      @loan_amount, @sale_date, @sale_amount, @description, @source_url, @raw_data
+      @loan_amount, @sale_date, @sale_amount, @description, @source_url, @raw_data,
+      COALESCE(@scraped_at, datetime('now'))
     )
-  `).run(safeLead);
+  `).run({ ...safeLead, scraped_at: scrapedAt });
   return true;
 }
 

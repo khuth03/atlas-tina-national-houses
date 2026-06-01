@@ -40,6 +40,7 @@ interface Stats {
   byType: Array<{ lead_type: string; count: number }>;
   byCounty: Array<{ county: string; count: number }>;
   lastRun: string | null;
+  lastScrapeTime: string | null;
 }
 
 const STATUS_CONFIG = {
@@ -329,7 +330,7 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
             { label: "Total Leads", value: stats.total.toLocaleString(), icon: Database },
             { label: "Added Today", value: stats.today.toLocaleString(), icon: Zap },
             { label: "Lead Types", value: stats.byType.length.toString(), icon: Filter },
-            { label: "Last Scrape", value: stats.lastRun ? new Date(stats.lastRun).toLocaleDateString() : (stats.total > 0 ? new Date().toLocaleDateString() : "Never"), icon: Clock },
+            { label: "Last Scrape", value: (() => { const t = stats.lastScrapeTime || stats.lastRun; if (!t) return 'Never'; const d = new Date(t + (t.includes('T') ? '' : 'T00:00:00')); return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); })(), icon: Clock },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-4">
               <div className="flex items-center gap-2 text-white/40 text-xs mb-1"><Icon className="w-3.5 h-3.5" />{label}</div>
@@ -414,19 +415,20 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[lead.lead_type] || "bg-white/10 text-white/60"}`}>
                       {lead.lead_type}
                     </span>
-                    <span className="text-xs text-white/30">{lead.county}, {lead.state}</span>
-                    {lead.filing_date && <span className="text-xs text-white/30">{lead.filing_date}</span>}
+                    <span className="text-xs text-white/40">{lead.county}, {lead.state}</span>
+                    {lead.filing_date && <span className="text-xs text-white/30"><span className="text-white/20">Filed</span> {lead.filing_date}</span>}
+                    {lead.scraped_at && <span className="text-xs text-white/25"><span className="text-white/20">Added</span> {new Date(lead.scraped_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                   </div>
-                  <div className="mt-1 flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-semibold text-white">{lead.owner_name || "Unknown Owner"}</span>
+                  <div className="mt-1.5 flex items-start gap-3 flex-wrap">
+                    <span className="text-sm font-bold text-white leading-tight">{lead.owner_name || "Unknown Owner"}</span>
                     {lead.address && (
-                      <span className="text-xs text-white/50">
-                        <MapPin className="inline w-3 h-3 mr-0.5" />
+                      <span className="text-xs text-white/50 flex items-center gap-0.5">
+                        <MapPin className="w-3 h-3 shrink-0" />
                         {lead.address}{lead.city ? `, ${lead.city}` : ""}{lead.zip ? ` ${lead.zip}` : ""}
                       </span>
                     )}
                   </div>
-                  {lead.case_number && <div className="text-xs text-white/30 mt-0.5 font-mono">Case: {lead.case_number}</div>}
+                  {lead.case_number && <div className="text-xs text-white/25 mt-0.5 font-mono">Case #{lead.case_number}</div>}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_CONFIG[lead.status]?.className || STATUS_CONFIG.new.className}`}>
@@ -438,26 +440,41 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
 
               {expandedLead === lead.id && (
                 <div className="border-t border-white/10 p-4 space-y-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                    {[
-                      { label: "Mailing Address", value: [lead.mailing_address, lead.mailing_city, lead.mailing_state, lead.mailing_zip].filter(Boolean).join(", ") },
+                  {/* Mailing Address — shown separately if different from property address */}
+                  {lead.mailing_address && lead.mailing_address !== lead.address && (
+                    <div className="bg-white/[0.03] rounded-lg px-3 py-2 text-xs">
+                      <div className="text-white/30 mb-0.5">Mailing Address</div>
+                      <div className="text-white/70">{[lead.mailing_address, lead.mailing_city, lead.mailing_state, lead.mailing_zip].filter(Boolean).join(', ')}</div>
+                    </div>
+                  )}
+                  {/* Detail fields grid */}
+                  {(() => {
+                    const detailFields = [
                       { label: "Assessed Value", value: lead.assessed_value },
+                      { label: "Tax Year", value: lead.tax_year },
                       { label: "Lender", value: lead.lender },
                       { label: "Loan Amount", value: lead.loan_amount },
                       { label: "Sale Date", value: lead.sale_date },
                       { label: "Sale Amount", value: lead.sale_amount },
-                      { label: "Tax Year", value: lead.tax_year },
                       { label: "Description", value: lead.description },
-                    ].filter(f => f.value).map(({ label, value }) => (
-                      <div key={label}>
-                        <div className="text-white/30 mb-0.5">{label}</div>
-                        <div className="text-white/80">{value}</div>
+                      { label: "Date Added", value: lead.scraped_at ? new Date(lead.scraped_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : null },
+                    ].filter(f => f.value !== null && f.value !== undefined && f.value !== '' && f.value !== '0' && f.value !== '$0');
+                    return detailFields.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                        {detailFields.map(({ label, value }) => (
+                          <div key={label}>
+                            <div className="text-white/30 mb-0.5">{label}</div>
+                            <div className="text-white/80">{value}</div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    ) : (
+                      <p className="text-xs text-white/25 italic">No additional details available for this lead.</p>
+                    );
+                  })()}
                   {lead.source_url && (
                     <a href={lead.source_url} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-blue-400 hover:underline break-all">View Source &rarr;</a>
+                      className="text-xs text-blue-400/70 hover:text-blue-400 hover:underline break-all">View Source Record &rarr;</a>
                   )}
                   {/* Skip Trace Results */}
                   {lead.skip_traced && (lead.st_phone || lead.st_email || lead.st_mailing) && (
@@ -471,9 +488,9 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
                       {lead.st_mailing && <div className="flex items-center gap-2 text-xs text-white/70"><MapPin className="w-3 h-3 text-emerald-400/70" />{lead.st_mailing}</div>}
                     </div>
                   )}
-                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-white/[0.06]">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-white/30">Mark as:</span>
+                      <span className="text-xs text-white/25">Status:</span>
                       {(["new", "reviewed", "contacted", "skip"] as const).map(s => (
                         <button key={s} onClick={() => updateStatus(lead.id, s)}
                           className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${lead.status === s ? STATUS_CONFIG[s].className : "bg-white/5 text-white/40 border border-white/10 hover:border-white/20"}`}>
