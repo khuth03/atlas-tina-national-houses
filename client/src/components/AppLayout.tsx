@@ -1,39 +1,26 @@
 // Atlas AppLayout — Premium dark intelligence dashboard
-// Sidebar: 64px wider, refined typography, subtle glow on active items
+// Sidebar: County Scraper + Property Condition AI only
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Map,
   Building2,
-  Shield,
-  Users,
-  BookOpen,
-  Flame,
   Settings,
   LogOut,
   ChevronRight,
-  Lock,
   Menu,
   X,
-  Zap,
 } from "lucide-react";
 
 interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   href: string;
-  active: boolean;
-  locked?: boolean;
-  lockReason?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "County Scraper", icon: Map, href: "/county-scraper", active: true },
-  { label: "Property Condition AI", icon: Building2, href: "/property-condition", active: true },
-  { label: "Insurance Gap Finder", icon: Shield, href: "/insurance-gap", active: false, locked: true, lockReason: "Identify properties with coverage gaps — upgrade to unlock" },
-  { label: "Social Distress Signal", icon: Users, href: "/social-distress", active: false, locked: true, lockReason: "Monitor social platforms for motivated seller signals — upgrade to unlock" },
-  { label: "Obituary Monitor", icon: BookOpen, href: "/obituary-monitor", active: false, locked: true, lockReason: "Track estate and probate leads — upgrade to unlock" },
-  { label: "Fire Damage Monitor", icon: Flame, href: "/fire-damage", active: false, locked: true, lockReason: "Track fire-damaged properties — upgrade to unlock" },
+  { label: "County Scraper", icon: Map, href: "/county-scraper" },
+  { label: "Property Condition AI", icon: Building2, href: "/property-condition" },
 ];
 
 interface AppLayoutProps {
@@ -72,11 +59,10 @@ export default function AppLayout({ children, companyName, userEmail, accentColo
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
-        {/* Active section label */}
         <div className="text-white/25 text-[10px] font-bold uppercase tracking-[0.18em] px-3 mb-3">
           Active Modules
         </div>
-        {NAV_ITEMS.filter((i) => !i.locked).map((item) => {
+        {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
           return (
@@ -97,26 +83,6 @@ export default function AppLayout({ children, companyName, userEmail, accentColo
                 {isActive && <ChevronRight className="w-3 h-3 opacity-60" />}
               </a>
             </Link>
-          );
-        })}
-
-        {/* Locked section label */}
-        <div className="text-white/25 text-[10px] font-bold uppercase tracking-[0.18em] px-3 mt-6 mb-3 flex items-center gap-2">
-          <Zap className="w-3 h-3" />
-          Upgrade to Unlock
-        </div>
-        {NAV_ITEMS.filter((i) => i.locked).map((item) => {
-          const Icon = item.icon;
-          return (
-            <div
-              key={item.href}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/20 cursor-not-allowed select-none"
-              title={item.lockReason}
-            >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="flex-1 truncate">{item.label}</span>
-              <Lock className="w-3 h-3 opacity-60" />
-            </div>
           );
         })}
       </nav>

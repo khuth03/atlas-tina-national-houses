@@ -278,7 +278,8 @@ async function scrapeCodeViolationsHamilton(fromDate: string, toDate: string): P
   try {
     // Cincinnati Open Data Portal — code enforcement violations
     // Public JSON API, no auth required
-    const url = `https://data.cincinnati-oh.gov/resource/dxyd-3h4p.json?$where=date_initiated>='${fromDate}'&$limit=200&$order=date_initiated DESC`;
+    // CONFIRMED WORKING: cncm-znd6 = Cincinnati Code Enforcement dataset
+    const url = `https://data.cincinnati-oh.gov/resource/cncm-znd6.json?$where=entered_date>='${fromDate}'&$limit=500&$order=entered_date DESC`;
     const res = await fetchWithRetry(url, {
       headers: { "Accept": "application/json" },
     });
@@ -286,19 +287,20 @@ async function scrapeCodeViolationsHamilton(fromDate: string, toDate: string): P
     const data = await res.json() as Record<string, string>[];
 
     for (const item of data) {
-      const address = item.address || item.incident_address || "";
-      const type = item.violation_type || item.type || item.category || "Code Violation";
-      const date = item.date_initiated || item.date_created || fromDate;
-      const caseNum = item.case_number || item.id || item.incident_number || "";
+      const address = item.full_address || item.address || "";
+      const type = item.comp_type_desc || item.sub_type_desc || item.violation_type || "Code Violation";
+      const date = item.entered_date || item.date_initiated || fromDate;
+      const caseNum = item.number_key || item.case_number || item.id || "";
 
       if (!address && !caseNum) continue;
+      const enriched = address ? await lookupByAddress(address, "Hamilton", "OH") : null;
 
       leads.push({
         id: makeId("CV", caseNum || address, "Hamilton", "OH"),
         county: "Hamilton", state: "OH",
         lead_type: "Code Violation",
-        owner_name: item.owner_name || item.property_owner || null,
-        address: address || null, city: "Cincinnati", zip: item.zip || null,
+        owner_name: enriched?.ownerName || item.owner_name || item.property_owner || null,
+        address: enriched?.address || address || null, city: enriched?.city || "Cincinnati", zip: enriched?.zip || item.zip || null,
         mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
         case_number: caseNum || null,
         filing_date: formatDate(date),
@@ -306,7 +308,7 @@ async function scrapeCodeViolationsHamilton(fromDate: string, toDate: string): P
         lender: null, loan_amount: null,
         sale_date: null, sale_amount: null,
         description: `Code Violation — ${type} — ${address}`,
-        source_url: "https://data.cincinnati-oh.gov/Neighborhoods/Cincinnati-Code-Enforcement/dxyd-3h4p",
+        source_url: "https://data.cincinnati-oh.gov/Neighborhoods/Cincinnati-Code-Enforcement/cncm-znd6",
         raw_data: JSON.stringify(item),
       });
     }
@@ -320,8 +322,9 @@ async function scrapeCodeViolationsHamilton(fromDate: string, toDate: string): P
 async function scrapeFireDamage(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   try {
-    // Cincinnati Open Data — fire incidents
-    const url = `https://data.cincinnati-oh.gov/resource/rvmt-pkmq.json?$where=create_time_incident>='${fromDate}'&$limit=100&$order=create_time_incident DESC`;
+    // CONFIRMED WORKING: vnsz-a3wp = Cincinnati Fire Incidents (CAD)
+    // Fields: create_time_incident, address_x, incident_type_desc, cfd_incident_type_group, event_number
+    const url = `https://data.cincinnati-oh.gov/resource/vnsz-a3wp.json?$where=create_time_incident>='${fromDate}' AND cfd_incident_type_group='STRUCTURE FIRE'&$limit=500&$order=create_time_incident DESC`;
     const res = await fetchWithRetry(url, {
       headers: { "Accept": "application/json" },
     });
@@ -371,21 +374,23 @@ async function scrapeFireDamage(fromDate: string, toDate: string): Promise<Lead[
 
       const address = item.address_x || item.incident_address || "";
       const date = item.create_time_incident || item.date || fromDate;
+      // Enrich with owner name via address lookup
+      const enriched = address ? await lookupByAddress(address, "Hamilton", "OH") : null;
 
       leads.push({
-        id: makeId("FIRE", item.incident_no || address, "Hamilton", "OH"),
+        id: makeId("FIRE", item.event_number || item.incident_no || address, "Hamilton", "OH"),
         county: "Hamilton", state: "OH",
         lead_type: "Fire Damage",
-        owner_name: null,
-        address: address || null, city: "Cincinnati", zip: null,
+        owner_name: enriched?.ownerName || null,
+        address: enriched?.address || address || null, city: enriched?.city || "Cincinnati", zip: enriched?.zip || null,
         mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: item.incident_no || null,
+        case_number: item.event_number || item.incident_no || null,
         filing_date: formatDate(date),
         assessed_value: null, tax_year: null,
         lender: null, loan_amount: null,
         sale_date: null, sale_amount: null,
         description: `Fire Damage — ${item.incident_type_desc || "Structure Fire"} — ${address}`,
-        source_url: "https://data.cincinnati-oh.gov/Safety/Cincinnati-Fire-Incidents/rvmt-pkmq",
+        source_url: "https://data.cincinnati-oh.gov/Public-Safety/Cincinnati-Fire-Incidents-CAD/vnsz-a3wp",
         raw_data: JSON.stringify(item),
       });
     }
@@ -632,38 +637,63 @@ export async function scrapeDivorce(fromDate: string, toDate: string): Promise<L
   }
   return leads;
 }
-// ─── VACANT/ABANDONED — Cincinnati Open Data blight registry ─────────────────
+// ─── VACANT/ABANDONED — Cincinnati Open Data Vacant Foreclosed Property Registry ─
+// Dataset: w3jp-dfxy (Vacant Foreclosed Property Program)
+// Fields: number_key, comp_type_desc, sub_type_desc, entered_date, latitude, longitude, neighborhood
+// NOTE: No street address field — use Nominatim reverse geocoding from lat/lon
 // Enrichment: lookupByAddress → owner name from Hamilton County Auditor
 export async function scrapeVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   try {
-    const url = `https://data.cincinnati-oh.gov/resource/ggwt-jnac.json?$where=date_entered>='${fromDate}T00:00:00'&$limit=300&$order=date_entered DESC`;
+    const url = `https://data.cincinnati-oh.gov/resource/w3jp-dfxy.json?$where=entered_date>='${fromDate}T00:00:00'&$limit=300&$order=entered_date DESC`;
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
     if (res.ok) {
       const data = await res.json() as Record<string, string>[];
+      // Reverse geocode lat/lon to get street address (Nominatim, rate-limited)
       for (const item of data) {
-        const address = item.address || item.incident_address || "";
-        if (!address) continue;
+        const lat = item.latitude || "";
+        const lon = item.longitude || "";
+        let address = "";
+        let zip = "";
+        if (lat && lon) {
+          try {
+            const geoRes = await fetchWithRetry(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+              { headers: { "User-Agent": "AtlasLeadSystem/1.0" } }
+            );
+            if (geoRes.ok) {
+              const geo = await geoRes.json() as Record<string, any>;
+              const addrObj = geo.address || {};
+              const house = addrObj.house_number || "";
+              const road = addrObj.road || "";
+              address = house && road ? `${house} ${road}` : road;
+              zip = addrObj.postcode || "";
+            }
+          } catch { /* skip geocoding if it fails */ }
+          // Nominatim rate limit: 1 req/sec
+          await new Promise(r => setTimeout(r, 1100));
+        }
+        if (!address) address = `[lat:${lat.slice(0,7)}, lon:${lon.slice(0,8)}]`;
         leads.push({
-          id: makeId("Hamilton", "OH", "Vacant Abandoned", item.id || address),
+          id: makeId("Hamilton", "OH", "Vacant Abandoned", item.number_key || address),
           county: "Hamilton", state: "OH",
           lead_type: "Vacant/Abandoned",
           owner_name: null,
-          address: address || null, city: "Cincinnati", zip: item.zip_code || null,
+          address: address || null, city: "Cincinnati", zip: zip || null,
           mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: item.id || null,
-          filing_date: formatDate(item.date_entered?.slice(0, 10) || fromDate),
+          case_number: item.number_key || null,
+          filing_date: formatDate(item.entered_date?.slice(0, 10) || fromDate),
           assessed_value: null, tax_year: null,
           lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-          description: `Vacant/Abandoned — ${item.status || "Vacant Structure"} — ${address}`,
-          source_url: "https://data.cincinnati-oh.gov/Neighborhoods/Vacant-Structures/ggwt-jnac",
+          description: `Vacant/Abandoned — ${item.comp_type_desc || ""} — ${item.sub_type_desc || ""} — ${item.neighborhood || ""}`,
+          source_url: "https://data.cincinnati-oh.gov/resource/w3jp-dfxy",
           raw_data: JSON.stringify(item),
         });
       }
     }
-    // Enrich with owner name via assessor address lookup — 10 concurrent
-    const CONCURRENCY_V = 10;
-    const unenriched = leads.filter(l => !l.owner_name && l.address);
+    // Enrich with owner name via assessor address lookup — 5 concurrent
+    const CONCURRENCY_V = 5;
+    const unenriched = leads.filter(l => !l.owner_name && l.address && !l.address.startsWith("["));
     for (let i = 0; i < unenriched.length; i += CONCURRENCY_V) {
       const batch = unenriched.slice(i, i + CONCURRENCY_V);
       const results = await Promise.all(batch.map(l => lookupByAddress(l.address!, "Hamilton", "OH")));

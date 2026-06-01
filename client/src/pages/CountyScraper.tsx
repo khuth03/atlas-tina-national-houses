@@ -1,6 +1,6 @@
 // County Scraper — full-stack live data version
 import { useState, useEffect, useCallback } from "react";
-import { MapPin, Clock, Download, RefreshCw, Filter, Search, Calendar, ChevronDown, Database, Zap, History, UserSearch, Phone, Mail, CheckCircle2, AlertCircle } from "lucide-react";
+import { MapPin, Clock, Download, RefreshCw, Filter, Search, Calendar, ChevronDown, ChevronUp, Database, Zap, History, UserSearch, Phone, Mail, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface Lead {
   id: string;
@@ -88,6 +88,7 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
   const [historicalDays, setHistoricalDays] = useState(30);
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const PAGE_SIZE = 50;
 
   const fetchLeads = useCallback(async () => {
@@ -188,7 +189,11 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
     }
   };
 
-  const exportCSV = () => {
+  const exportAll = () => {
+    window.open("/api/leads/export", "_blank");
+    setShowExportMenu(false);
+  };
+  const exportFiltered = () => {
     const params = new URLSearchParams();
     if (selectedCounty !== "all") params.set("county", selectedCounty);
     if (selectedType !== "all") params.set("lead_type", selectedType);
@@ -196,6 +201,7 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
     if (fromDate) params.set("from_date", fromDate);
     if (toDate) params.set("to_date", toDate);
     window.open(`/api/leads/export?${params}`, "_blank");
+    setShowExportMenu(false);
   };
 
   const filtered = leads.filter(l => {
@@ -211,7 +217,25 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
 
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const allTypes = Array.from(new Set(leads.map(l => l.lead_type))).sort();
+  // Full hardcoded list so all lead types are always available as filter options,
+  // regardless of what has been scraped so far. Merge with any DB types not in this list.
+  const KNOWN_TYPES = [
+    "Bankruptcy",
+    "Code Violation",
+    "Divorce",
+    "Fire Damage",
+    "FSBO",
+    "Lis Pendens",
+    "Obituary",
+    "Pre-Foreclosure",
+    "Probate",
+    "Sheriff Sale",
+    "Tax Delinquent",
+    "Vacant",
+    "Water Shutoff",
+  ];
+  const dbTypes = stats ? stats.byType.map(t => t.lead_type) : leads.map(l => l.lead_type);
+  const allTypes = Array.from(new Set([...KNOWN_TYPES, ...dbTypes])).sort();
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -228,11 +252,35 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
             <History className="w-3.5 h-3.5" />
             Historical Pull
           </button>
-          <button onClick={exportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white/60 border border-white/10 hover:border-white/20 transition-colors">
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
+          <div className="relative">
+            <button onClick={() => setShowExportMenu(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white/60 border border-white/10 hover:border-white/20 transition-colors">
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+              {showExportMenu ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-[#13131f] border border-white/10 rounded-xl shadow-xl z-20 overflow-hidden">
+                <button onClick={exportAll}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-xs text-white/70 hover:bg-white/5 hover:text-white transition-colors text-left">
+                  <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-semibold">Export All Leads</div>
+                    <div className="text-white/35 text-[11px]">Every lead in the database</div>
+                  </div>
+                </button>
+                <div className="border-t border-white/[0.06]" />
+                <button onClick={exportFiltered}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-xs text-white/70 hover:bg-white/5 hover:text-white transition-colors text-left">
+                  <Filter className="w-3.5 h-3.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-semibold">Export Current View</div>
+                    <div className="text-white/35 text-[11px]">Filtered by county, type &amp; date</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
           <button onClick={triggerScrape} disabled={scraping}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-50"
             style={{ backgroundColor: accentColor }}>
@@ -281,7 +329,7 @@ export default function CountyScraper({ counties, accentColor }: CountyScraperPr
             { label: "Total Leads", value: stats.total.toLocaleString(), icon: Database },
             { label: "Added Today", value: stats.today.toLocaleString(), icon: Zap },
             { label: "Lead Types", value: stats.byType.length.toString(), icon: Filter },
-            { label: "Last Scrape", value: stats.lastRun ? new Date(stats.lastRun).toLocaleDateString() : "Never", icon: Clock },
+            { label: "Last Scrape", value: stats.lastRun ? new Date(stats.lastRun).toLocaleDateString() : (stats.total > 0 ? new Date().toLocaleDateString() : "Never"), icon: Clock },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-4">
               <div className="flex items-center gap-2 text-white/40 text-xs mb-1"><Icon className="w-3.5 h-3.5" />{label}</div>
