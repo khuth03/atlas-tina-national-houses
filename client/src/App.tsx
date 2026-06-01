@@ -137,8 +137,6 @@ export const CLIENT_CONFIG = {
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-
 export default function App() {
   const [isAuth, setIsAuth] = useState(() => !!localStorage.getItem("atlas_auth"));
   const [apiKeys, setApiKeys] = useState<{ googleMaps: string; openAi: string }>(() => {
@@ -198,7 +196,6 @@ export default function App() {
         <Route path="/settings">
           <Settings />
         </Route>
-        {/* locked modules removed */}
         <Route>
           <Redirect to="/county-scraper" />
         </Route>

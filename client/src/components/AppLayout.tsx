@@ -1,36 +1,26 @@
 // Atlas AppLayout — Premium dark intelligence dashboard
-// Sidebar: 64px wider, refined typography, subtle glow on active items
+// Sidebar: County Scraper + Property Condition AI only
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Map,
   Building2,
-  Shield,
-  Users,
-  BookOpen,
-  Flame,
   Settings,
   LogOut,
   ChevronRight,
-  Lock,
   Menu,
   X,
-  Zap,
 } from "lucide-react";
 
 interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   href: string;
-  active: boolean;
-  locked?: boolean;
-  lockReason?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "County Scraper", icon: Map, href: "/county-scraper", active: true },
-  { label: "Property Condition AI", icon: Building2, href: "/property-condition", active: true },
-
+  { label: "County Scraper", icon: Map, href: "/county-scraper" },
+  { label: "Property Condition AI", icon: Building2, href: "/property-condition" },
 ];
 
 interface AppLayoutProps {
@@ -69,11 +59,10 @@ export default function AppLayout({ children, companyName, userEmail, accentColo
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
-        {/* Active section label */}
         <div className="text-white/25 text-[10px] font-bold uppercase tracking-[0.18em] px-3 mb-3">
           Active Modules
         </div>
-        {NAV_ITEMS.filter((i) => !i.locked).map((item) => {
+        {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
           return (
@@ -96,8 +85,6 @@ export default function AppLayout({ children, companyName, userEmail, accentColo
             </Link>
           );
         })}
-
-        {/* End active modules */}
       </nav>
 
       {/* Bottom */}

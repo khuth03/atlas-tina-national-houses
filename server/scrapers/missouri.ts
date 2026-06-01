@@ -899,30 +899,28 @@ async function scrapeMOObituaries(fromDate: string, toDate: string): Promise<Lea
 async function scrapeMOWaterShutoffs(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   try {
-    // KC 311 Socrata — filter specifically for water service requests
-    // This covers Jackson County (Kansas City)
-    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=500&$order=creation_date DESC&$q=water`;
+    // KC 311 Socrata — CONFIRMED WORKING
+    // Dataset: d4px-6rwg (2021-present) | Fields: open_date_time, issue_type, issue_sub_type, incident_address, workorder_
+    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=open_date_time>='${fromDate}T00:00:00' AND issue_type='Water Service' AND issue_sub_type='No Water'&$limit=500&$order=open_date_time DESC`;
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
     if (res.ok) {
       const data = await res.json() as Record<string, string>[];
       for (const item of data) {
-        const reqType = (item.request_type || item.type || "").toLowerCase();
-        if (!reqType.includes("water") && !reqType.includes("shutoff") && !reqType.includes("utility")) continue;
-        const address = item.address || item.street_address || "";
+        const address = item.incident_address || "";
         if (!address) continue;
         leads.push({
-          id: makeId("Jackson", STATE, "Water Shutoff", item.service_request_num || address),
+          id: makeId("Jackson", STATE, "Water Shutoff", item.workorder_ || address),
           county: "Jackson", state: STATE,
           lead_type: "Water Shutoff",
           owner_name: null,
-          address: address || null, city: "Kansas City", zip: item.zip_code || null,
+          address: address || null, city: "Kansas City", zip: null,
           mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: item.service_request_num || null,
-          filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
+          case_number: item.workorder_ || null,
+          filing_date: formatDate(item.open_date_time?.slice(0, 10) || fromDate),
           assessed_value: null, tax_year: null,
           lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-          description: `Water Shutoff — ${item.request_type || "Water Service Issue"} — ${address}`,
-          source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+          description: `Water Shutoff — No Water — ${address}`,
+          source_url: "https://data.kcmo.org/311/311-Call-Center-Reported-Issues/d4px-6rwg",
           raw_data: JSON.stringify(item),
         });
       }
@@ -954,57 +952,28 @@ async function scrapeMOWaterShutoffs(fromDate: string, toDate: string): Promise<
 async function scrapeMOFireDamage(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   try {
-    // KC Fire incidents via KC Open Data (Jackson County)
-    const url = `https://data.kcmo.org/resource/rvmt-pkmq.json?$where=create_time_incident>='${fromDate}T00:00:00'&$limit=200&$order=create_time_incident DESC`;
+    // KC 311 Socrata — CONFIRMED WORKING
+    // Dataset: d4px-6rwg (2021-present) | issue_type: 'Dangerous Buildings', 'Open Burning/Fire'
+    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=open_date_time>='${fromDate}T00:00:00' AND (issue_type='Dangerous Buildings' OR issue_type='Open Burning/Fire')&$limit=500&$order=open_date_time DESC`;
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
     if (res.ok) {
       const data = await res.json() as Record<string, string>[];
       for (const item of data) {
-        const type = (item.incident_type_desc || item.type_desc || "").toLowerCase();
-        if (!type.includes("fire") && !type.includes("structure") && !type.includes("residential")) continue;
-        const address = item.address_x || item.incident_address || "";
+        const address = item.incident_address || "";
         if (!address) continue;
         leads.push({
-          id: makeId("Jackson", STATE, "Fire Damage", item.incident_no || address),
+          id: makeId("Jackson", STATE, "Fire Damage", item.workorder_ || address),
           county: "Jackson", state: STATE,
           lead_type: "Fire Damage",
           owner_name: null,
           address: address || null, city: "Kansas City", zip: null,
           mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: item.incident_no || null,
-          filing_date: formatDate(item.create_time_incident?.slice(0, 10) || fromDate),
+          case_number: item.workorder_ || null,
+          filing_date: formatDate(item.open_date_time?.slice(0, 10) || fromDate),
           assessed_value: null, tax_year: null,
           lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-          description: `Fire Damage — ${item.incident_type_desc || "Structure Fire"} — ${address}`,
-          source_url: "https://data.kcmo.org/Public-Safety/Kansas-City-Fire-Incidents/rvmt-pkmq",
-          raw_data: JSON.stringify(item),
-        });
-      }
-    }
-    // Fallback: KC 311 fire/structure damage requests
-    const url311 = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=200&$order=creation_date DESC&$q=fire`;
-    const res311 = await fetchWithRetry(url311, { headers: { Accept: "application/json" } });
-    if (res311.ok) {
-      const data = await res311.json() as Record<string, string>[];
-      for (const item of data) {
-        const reqType = (item.request_type || item.type || "").toLowerCase();
-        if (!reqType.includes("fire") && !reqType.includes("structure") && !reqType.includes("damage")) continue;
-        const address = item.address || item.street_address || "";
-        if (!address) continue;
-        const county = "Jackson"; // KC 311 covers Jackson
-        leads.push({
-          id: makeId(county, STATE, "Fire Damage", item.service_request_num || address),
-          county, state: STATE,
-          lead_type: "Fire Damage",
-          owner_name: null,
-          address: address || null, city: "Kansas City", zip: item.zip_code || null,
-          mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-          case_number: item.service_request_num || null,
-          filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
-          assessed_value: null, tax_year: null,
-          lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-          description: `Fire Damage — ${item.request_type || "Structure Fire"} — ${address}`,
-          source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+          description: `Fire Damage — ${item.issue_type || "Dangerous Building"} — ${address}`,
+          source_url: "https://data.kcmo.org/311/311-Call-Center-Reported-Issues/d4px-6rwg",
           raw_data: JSON.stringify(item),
         });
       }
@@ -1034,28 +1003,28 @@ async function scrapeMOFireDamage(fromDate: string, toDate: string): Promise<Lea
 async function scrapeMOVacantAbandoned(fromDate: string, toDate: string): Promise<Lead[]> {
   const leads: Lead[] = [];
   try {
-    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=creation_date>='${fromDate}T00:00:00'&$limit=300&$order=creation_date DESC&$q=vacant`;
+    // KC 311 Socrata — CONFIRMED WORKING
+    // Dataset: d4px-6rwg (2021-present) | issue_type: 'Property Violations', issue_sub_type contains 'Vacant'
+    const url = `https://data.kcmo.org/resource/d4px-6rwg.json?$where=open_date_time>='${fromDate}T00:00:00' AND issue_type='Property Violations' AND issue_sub_type like '%Vacant%'&$limit=500&$order=open_date_time DESC`;
     const res = await fetchWithRetry(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return leads;
     const data = await res.json() as Record<string, string>[];
     for (const item of data) {
-      const reqType = (item.request_type || item.type || "").toLowerCase();
-      if (!reqType.includes("vacant") && !reqType.includes("abandon") && !reqType.includes("blight")) continue;
-      const address = item.address || item.street_address || "";
+      const address = item.incident_address || "";
       if (!address) continue;
       leads.push({
-        id: makeId("Jackson", STATE, "Vacant Abandoned", item.service_request_num || address),
+        id: makeId("Jackson", STATE, "Vacant Abandoned", item.workorder_ || address),
         county: "Jackson", state: STATE,
         lead_type: "Vacant/Abandoned",
         owner_name: null,
-        address: address || null, city: "Kansas City", zip: item.zip_code || null,
+        address: address || null, city: "Kansas City", zip: null,
         mailing_address: null, mailing_city: null, mailing_state: null, mailing_zip: null,
-        case_number: item.service_request_num || null,
-        filing_date: formatDate(item.creation_date?.slice(0, 10) || fromDate),
+        case_number: item.workorder_ || null,
+        filing_date: formatDate(item.open_date_time?.slice(0, 10) || fromDate),
         assessed_value: null, tax_year: null,
         lender: null, loan_amount: null, sale_date: null, sale_amount: null,
-        description: `Vacant/Abandoned — ${item.request_type || "Vacant Property"} — ${address}`,
-        source_url: "https://data.kcmo.org/311/311-Call-Center-Service-Requests/d4px-6rwg",
+        description: `Vacant/Abandoned — ${item.issue_sub_type || "Vacant Property"} — ${address}`,
+        source_url: "https://data.kcmo.org/311/311-Call-Center-Reported-Issues/d4px-6rwg",
         raw_data: JSON.stringify(item),
       });
     }
